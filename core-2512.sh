@@ -455,8 +455,6 @@ CONFIG_PACKAGE_luci-app-turboacc=y
 CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE=y
 # CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_CM is not set
 # CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_DRV is not set
-CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_BBR_CCA=y
-CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_NFT_FULLCONE=y
 CONFIG_PACKAGE_kmod-nft-offload=y
 CONFIG_PACKAGE_kmod-fast-classifier=y
 CONFIG_PACKAGE_kmod-shortcut-fe=y
