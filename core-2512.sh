@@ -11,20 +11,8 @@ function device_config_error() {
 	echo "::error title=Device config error::$*" >&2
 	return 1
 }
-function kernel66_enabled() {
-	[ "${KERNEL66:-0}" = "1" ]
-}
-function set_testing_kernel_config() {
-	local config_file
-	for config_file in machine-configs/$OpenWrt_PATCH_FILE_DIR/*.config; do
-		[ -f "$config_file" ] || continue
-		if ! grep -qx 'CONFIG_TESTING_KERNEL=y' "$config_file"; then
-			sed -i '1iCONFIG_TESTING_KERNEL=y' "$config_file"
-		fi
-		if ! grep -qx 'CONFIG_HAS_TESTING_KERNEL=y' "$config_file"; then
-			sed -i '1iCONFIG_HAS_TESTING_KERNEL=y' "$config_file"
-		fi
-	done
+function kernel618_enabled() {
+	[ "${KERNEL618:-0}" = "1" ]
 }
 function resolve_build_matrix() {
 	local workspace="${GITHUB_WORKSPACE:-$PWD}"
@@ -83,7 +71,8 @@ function resolve_build_matrix() {
 			return 1
 		fi
 		config_file="$package_dir/${machine}-${target}-${firewall}.config"
-		if [ ! -s "$config_file" ]; then
+		# 允许空的 package config（占位后补内容），这里只要求文件存在
+		if [ ! -f "$config_file" ]; then
 			device_config_error "Missing package config: $config_file"
 			return 1
 		fi
@@ -115,13 +104,13 @@ function init_gh_env_2512() {
 	source "${GITHUB_WORKSPACE}/env/common.txt"
 	local repo_env_file="${OpenWrt_REPO_ENV_FILE:-$OpenWrt_PATCH_FILE_DIR}"
 	source "${GITHUB_WORKSPACE}/env/$repo_env_file.repo"
-	local kernel66
-	kernel66=$(echo "$PATCH_JSON_INPUT" | jq -r '.KERNEL66 // "0"')
-	if [ "$kernel66" = "1" ]; then
-		REPO_URL="${KERNEL66_REPO_URL:-$REPO_URL}"
-		REPO_BRANCH="${KERNEL66_REPO_BRANCH:-$REPO_BRANCH}"
+	local kernel618
+	kernel618=$(echo "$PATCH_JSON_INPUT" | jq -r '.KERNEL618 // "0"')
+	if [ "$kernel618" = "1" ]; then
+		REPO_URL="${KERNEL618_REPO_URL:-$REPO_URL}"
+		REPO_BRANCH="${KERNEL618_REPO_BRANCH:-$REPO_BRANCH}"
 	fi
-	echo -e "KERNEL66=$kernel66" >> "$GITHUB_ENV"
+	echo -e "KERNEL618=$kernel618" >> "$GITHUB_ENV"
 	echo -e "Branch=$REPO_BRANCH" >> "$GITHUB_ENV"
 	echo -e "ADD_SKB_RECYCLER=$(echo "$PATCH_JSON_INPUT" | jq -r '.ADD_SKB_RECYCLER // "0"')" >> "$GITHUB_ENV"
 	echo -e "ADD_eBPF=$(echo $PATCH_JSON_INPUT | jq -r ".ADD_eBPF")" >> "$GITHUB_ENV"
@@ -138,7 +127,7 @@ function patch_json_input_set() {
 	echo -e "OPENSSL_3_5=$(echo $PATCH_JSON_INPUT | jq -r ".OPENSSL_3_5")" >> "$GITHUB_ENV"
 	echo -e "BCM_FULLCONE=$(echo $PATCH_JSON_INPUT | jq -r ".BCM_FULLCONE")" >> "$GITHUB_ENV"
 	echo -e "TRY_BBR_V3=$(echo $PATCH_JSON_INPUT | jq -r ".TRY_BBR_V3")" >> "$GITHUB_ENV"
-	echo -e "KERNEL66=$(echo $PATCH_JSON_INPUT | jq -r ".KERNEL66 // \"0\"")" >> "$GITHUB_ENV"
+	echo -e "KERNEL618=$(echo $PATCH_JSON_INPUT | jq -r ".KERNEL618 // \"0\"")" >> "$GITHUB_ENV"
 	echo -e "Firewall_Allow_WAN=$(echo $PATCH_JSON_INPUT | jq -r ".Firewall_Allow_WAN")" >> "$GITHUB_ENV"
 	echo -e "DOCKER_BUILDIN=$(echo $PATCH_JSON_INPUT | jq -r ".DOCKER_BUILDIN")" >> "$GITHUB_ENV"
 	echo -e "ADD_IB=$(echo $PATCH_JSON_INPUT | jq -r ".ADD_IB")" >> "$GITHUB_ENV"
@@ -196,11 +185,11 @@ function init_openwrt_patch_2512() {
 	fi
 
 	if [ "$TRY_BBR_V3" = "1" ]; then
-		if ! kernel66_enabled; then
-			device_config_error "BBR v3 requires KERNEL66=1"
+		if ! kernel618_enabled; then
+			device_config_error "BBR v3 requires KERNEL618=1"
 			return 1
 		fi
-		local bbr_patch_dir="$OpenWrt_PATCH_FILE_DIR/mypatch-core-66/mypatch-bbr-v3"
+		local bbr_patch_dir="$OpenWrt_PATCH_FILE_DIR/mypatch-bbr-v3"
 		if [ ! -d "$bbr_patch_dir" ] || [ ! -d "$OpenWrt_PATCH_FILE_DIR/mypatch-core" ]; then
 			device_config_error "BBR v3 patch directory is incomplete"
 			return 1
@@ -238,6 +227,12 @@ function init_openwrt_patch_2512() {
 		rm -rf $OpenWrt_PATCH_FILE_DIR/feeds-luci-patch/0004-Revert-luci-app-firewall-add-fullcone.patch
 		echo "----$Matrix_Target-----nft-bcm---"
 		echo "BCM_FULLCONE_NAME=_BCM_FULLCONE" >> $GITHUB_ENV
+	fi
+
+	# 6.18 内核(airoha)使用分支自带的 fullcone 支持（firewall4/nftables），保留 LuCI 的 fullcone 选项
+	if kernel618_enabled; then
+		rm -rf $OpenWrt_PATCH_FILE_DIR/feeds-luci-patch/0004-Revert-luci-app-firewall-add-fullcone.patch
+		echo "----$Matrix_Target----fullcone-luci---"
 	fi
 
 	if [ "$DOCKER_BUILDIN" = "1" ]; then
@@ -302,10 +297,9 @@ CONFIG_IB=y
 		echo "----$Matrix_Target----IB---"
 	fi
 
-	if kernel66_enabled; then
-		echo "----$Matrix_Target----KERNEL-6.6---"
-		set_testing_kernel_config
-		echo "KERNEL66_NAME=_KERNEL66" >> $GITHUB_ENV
+	if kernel618_enabled; then
+		echo "----$Matrix_Target----KERNEL-6.18---"
+		echo "KERNEL618_NAME=_KERNEL618" >> $GITHUB_ENV
 	fi
 
 }
@@ -380,55 +374,52 @@ function copy_openwrt_turboacc_nft_packages() {
 	cp -RT "$package_source/libnftnl-$libnftnl_version/libnftnl" openwrt/package/libs/libnftnl || return 1
 	cp -RT "$package_source/nftables-$nftables_version/nftables" openwrt/package/network/utils/nftables || return 1
 }
-function add_openwrt_sfe_66_2512() {
+function add_openwrt_sfe_618_2512() {
 	local config_name="${Target_CFG_Machine}-${Matrix_Target}.config"
 	local config_file="package-configs/$OpenWrt_PATCH_FILE_DIR/$config_name"
-	local kernel_config="openwrt/target/linux/generic/config-6.6"
+	local kernel_config="openwrt/target/linux/generic/config-6.18"
 	local turboacc_luci_commit="530092c532839efb96e9f328d34dbf3adff4b557"
 	local turboacc_package_commit="c56760174a4b25e2a4f7566e3e4058e75e4ac9f8"
-	local old_driver_hash="659fa82a431e15af797a6c7069faeee02810453ad8b576c51c29f95a1761a045"
-	local driver_hash="0a73db82801fc0406a5bb7ff36e7e1b03f6550797b1aca0e8ea0cec3af465d2b"
 	local temp_dir
 
-	if [ ! -s "$config_file" ]; then
+	# 允许空的 package config（占位后补内容），这里只要求文件存在
+	if [ ! -f "$config_file" ]; then
 		device_config_error "Missing package config: $config_file"
 		return 1
 	fi
 	if [ ! -f "$kernel_config" ]; then
-		device_config_error "OpenWrt 6.6 kernel config not found: $kernel_config"
+		device_config_error "OpenWrt 6.18 kernel config not found: $kernel_config"
 		return 1
 	fi
 
 	temp_dir="$(mktemp -d)" || return 1
 	(
 		trap 'rm -rf "$temp_dir"' EXIT
-		mkdir -p "$temp_dir/package" openwrt/package \
-			openwrt/target/linux/generic/pending-6.6 \
-			openwrt/target/linux/generic/hack-6.6 || exit 1
+		mkdir -p "$temp_dir/luci" "$temp_dir/package" \
+			openwrt/package/turboacc \
+			openwrt/target/linux/generic/pending-6.18 \
+			openwrt/target/linux/generic/hack-6.18 || exit 1
+		curl -fsSL "https://codeload.github.com/chenmozhijin/turboacc/tar.gz/$turboacc_luci_commit" \
+			-o "$temp_dir/luci.tar.gz" || exit 1
 		curl -fsSL "https://codeload.github.com/chenmozhijin/turboacc/tar.gz/$turboacc_package_commit" \
 			-o "$temp_dir/package.tar.gz" || exit 1
+		tar -xzf "$temp_dir/luci.tar.gz" -C "$temp_dir/luci" --strip-components=1 || exit 1
 		tar -xzf "$temp_dir/package.tar.gz" -C "$temp_dir/package" --strip-components=1 || exit 1
 
-		rm -rf openwrt/package/shortcut-fe
-		cp -r "$temp_dir/package/shortcut-fe" openwrt/package/ || exit 1
-		sed -i "s/$old_driver_hash/$driver_hash/" \
-			openwrt/package/shortcut-fe/simulated-driver/Makefile
-		cp -f "$temp_dir/package/pending-6.6/613-netfilter_optional_tcp_window_check.patch" \
-			openwrt/target/linux/generic/pending-6.6/ || exit 1
-		cp -f "$temp_dir/package/hack-6.6/952-add-net-conntrack-events-support-multiple-registrant.patch" \
-			openwrt/target/linux/generic/hack-6.6/ || exit 1
-		cp -f "$temp_dir/package/hack-6.6/953-net-patch-linux-kernel-to-support-shortcut-fe.patch" \
-			openwrt/target/linux/generic/hack-6.6/ || exit 1
-
+		rm -rf openwrt/package/turboacc/luci-app-turboacc openwrt/package/turboacc/shortcut-fe
+		cp -r "$temp_dir/luci/luci-app-turboacc" openwrt/package/turboacc/ || exit 1
+		cp -r "$temp_dir/package/shortcut-fe" openwrt/package/turboacc/ || exit 1
+		rm -rf openwrt/package/turboacc/shortcut-fe/simulated-driver
 		if [[ "$Matrix_Target" == *-nftables ]]; then
-			mkdir -p "$temp_dir/luci" openwrt/package/turboacc || exit 1
-			curl -fsSL "https://codeload.github.com/chenmozhijin/turboacc/tar.gz/$turboacc_luci_commit" \
-				-o "$temp_dir/luci.tar.gz" || exit 1
-			tar -xzf "$temp_dir/luci.tar.gz" -C "$temp_dir/luci" --strip-components=1 || exit 1
-			rm -rf openwrt/package/turboacc/luci-app-turboacc
-			cp -r "$temp_dir/luci/luci-app-turboacc" openwrt/package/turboacc/ || exit 1
 			copy_openwrt_turboacc_nft_packages "$temp_dir/package" || exit 1
 		fi
+
+		cp -f "$temp_dir/package/pending-6.18/613-netfilter_optional_tcp_window_check.patch" \
+			openwrt/target/linux/generic/pending-6.18/ || exit 1
+		cp -f "$temp_dir/package/hack-6.18/952-add-net-conntrack-events-support-multiple-registrant.patch" \
+			openwrt/target/linux/generic/hack-6.18/ || exit 1
+		cp -f "$temp_dir/package/hack-6.18/953-net-patch-linux-kernel-to-support-shortcut-fe.patch" \
+			openwrt/target/linux/generic/hack-6.18/ || exit 1
 	) || return 1
 
 	grep -q 'CONFIG_NF_CONNTRACK_CHAIN_EVENTS' "$kernel_config" || \
@@ -440,10 +431,15 @@ function add_openwrt_sfe_66_2512() {
 		if ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc-ipt=y$' "$config_file"; then
 			cat >> "$config_file" <<'EOF'
 
-# SFE acceleration for kernel 6.6 (iptables)
+# SFE acceleration for kernel 6.18 (iptables)
 CONFIG_PACKAGE_luci-app-turboacc-ipt=y
 # CONFIG_PACKAGE_luci-app-turboacc-ipt_INCLUDE_PDNSD is not set
-CONFIG_PACKAGE_kmod-ipt-offload=y
+# CONFIG_PACKAGE_luci-app-turboacc-ipt_INCLUDE_OFFLOADING is not set
+CONFIG_PACKAGE_luci-app-turboacc-ipt_INCLUDE_SHORTCUT_FE=y
+# CONFIG_PACKAGE_luci-app-turboacc-ipt_INCLUDE_SHORTCUT_FE_CM is not set
+# CONFIG_PACKAGE_luci-app-turboacc-ipt_INCLUDE_SHORTCUT_FE_DRV is not set
+CONFIG_PACKAGE_luci-app-turboacc-ipt_INCLUDE_BBR_CCA=y
+# CONFIG_PACKAGE_luci-app-turboacc-ipt_INCLUDE_IPT_FULLCONE is not set
 CONFIG_PACKAGE_kmod-fast-classifier=y
 CONFIG_PACKAGE_kmod-shortcut-fe=y
 # CONFIG_PACKAGE_kmod-shortcut-fe-cm is not set
@@ -453,12 +449,14 @@ EOF
 		if ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc=y$' "$config_file"; then
 			cat >> "$config_file" <<'EOF'
 
-# SFE acceleration for kernel 6.6 (nftables)
+# SFE acceleration for kernel 6.18 (nftables)
 CONFIG_PACKAGE_luci-app-turboacc=y
 # CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING is not set
 CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE=y
 # CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_CM is not set
 # CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_DRV is not set
+CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_BBR_CCA=y
+CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_NFT_FULLCONE=y
 CONFIG_PACKAGE_kmod-nft-offload=y
 CONFIG_PACKAGE_kmod-fast-classifier=y
 CONFIG_PACKAGE_kmod-shortcut-fe=y
@@ -472,7 +470,7 @@ EOF
 	fi
 
 	add_openwrt_sfe_kmods
-	echo "----$Matrix_Target-----SFE-6.6----"
+	echo "----$Matrix_Target-----SFE-6.18----"
 }
 function add_openwrt_sfe_612_2512() {
 	local config_name="${Target_CFG_Machine}-${Matrix_Target}.config"
@@ -490,7 +488,7 @@ function add_openwrt_sfe_612_2512() {
 		device_config_error "Unsupported SFE matrix target: $Matrix_Target"
 		return 1
 	fi
-	if [ ! -s "$config_file" ]; then
+	if [ ! -f "$config_file" ]; then
 		device_config_error "Missing package config: $config_file"
 		return 1
 	fi
@@ -580,8 +578,8 @@ EOF
 	echo "----$Matrix_Target-----SFE-6.12----"
 }
 function add_openwrt_sfe_2512() {
-	if kernel66_enabled; then
-		add_openwrt_sfe_66_2512
+	if kernel618_enabled; then
+		add_openwrt_sfe_618_2512
 	else
 		add_openwrt_sfe_612_2512
 	fi
@@ -669,7 +667,8 @@ function add_machine_package_config() {
 		device_config_error "Missing machine config: $machine_config"
 		return 1
 	fi
-	if [ ! -s "$package_config" ]; then
+	# 允许空的 package config（占位后补内容），这里只要求文件存在
+	if [ ! -f "$package_config" ]; then
 		device_config_error "Missing package config: $package_config"
 		return 1
 	fi
@@ -803,7 +802,10 @@ echo "The exclude List route is $KMOD_Compile_Exclude_List_Route"
 elif [[ "$Matrix_Target" == ath79-* ]]; then
 KMOD_Compile_Exclude_List_Route=package-configs/kmod_exclude_list_ath79.config
 echo "The exclude List route is $KMOD_Compile_Exclude_List_Route"
-elif [ "$KERNEL66" = "1" ]; then
+elif [[ "$Matrix_Target" == airoha-* ]]; then
+KMOD_Compile_Exclude_List_Route=package-configs/kmod_exclude_list_airoha.config
+echo "The exclude List route is $KMOD_Compile_Exclude_List_Route"
+elif kernel618_enabled; then
 KMOD_Compile_Exclude_List_Route=package-configs/kmod_exclude_list_6_12.config
 echo "The exclude List route is $KMOD_Compile_Exclude_List_Route"
 else
@@ -868,7 +870,7 @@ function awk_openwrt_config() {
 	echo "------------------------"
 	awk '/CONFIG_PACKAGE_kmod/ { print }' .config
 	echo "------------------------"
-	awk '/mt7981/ { print }' .config
+	awk '/airoha/ { print }' .config
 	echo "------------------------"
 	awk '/turboacc/ { print }' .config
 }

@@ -1,4 +1,4 @@
-name: Build 25.12 Single Pon
+name: Build 25.12 Pon Airoha
 
 # Fix for broken build: https://github.com/softprops/action-gh-release/issues/236
 permissions:
@@ -17,22 +17,16 @@ on:
       MACH:
         description: 'Choose machine'
         required: true
-        default: 's20p'
+        default: 'hg5585f-cu'
         type: choice
         options:
-        - 's20p'
-        - 's20p-lite'
-        - 'lenovo_newifi-d1'
-        - 'd-team_newifi-d2'
-        - 'lenovo_newifi-y1'
-        - 'raisecom_msg1500'
-        - 'domywifi_dw33d'
-        - 'ath79_generic-multi'
-        - 'lunaticbox'
+        - 'hg5585f-cu'
+        - 'hg5585f-ct'
+        - '040g-md'
 
       SFE_BUILDIN:
-        description: 'Build sfe'
-        default: 'true'
+        description: 'Build sfe (airoha 默认关闭，PPE 硬件卸载已够用)'
+        default: 'false'
         type: choice
         options:
         - 'true'
@@ -41,7 +35,7 @@ on:
       patch_repo:
         description: 'Use json patch repo true(1) or false(0) See ReadME'
         required: true
-        default: '{"KERNEL66": "1", "TRY_BBR_V3": "1", "BCM_FULLCONE": "1", "Firewall_Allow_WAN": "0", "ADD_IB": "1", "ADD_SDK": "1", "ADD_eBPF": "0", "DOCKER_BUILDIN": "0"}'
+        default: '{"KERNEL618": "1", "TRY_BBR_V3": "1", "BCM_FULLCONE": "0", "Firewall_Allow_WAN": "0", "ADD_IB": "1", "ADD_SDK": "1", "ADD_eBPF": "0", "DOCKER_BUILDIN": "0"}'
 
       SETIP:
         description: 'Set ip address'
@@ -97,7 +91,7 @@ on:
       packages:
         description: 'OpenWrt packages（example: luci-app-example,luci-app-helloworld）'
         required: true
-        default: 'luci-app-mwan-switch,luci-app-example2'
+        default: 'luci-app-mwan-switch'
       packages_mod:
         description: 'The Above packages set to which'
         default: 'm'
@@ -110,7 +104,7 @@ on:
 env:
   TZ: Asia/Shanghai
   OpenWrt_PATCH_FILE_DIR: openwrt-2512
-  KERNEL66_REPO_TOKEN: ${{ secrets.MY_SECRET_TOKEN }}
+  KERNEL618_REPO_TOKEN: ${{ secrets.MY_SECRET_TOKEN }}
 
 jobs:
   prepare:
@@ -134,7 +128,7 @@ jobs:
     needs: prepare
     strategy:
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
-    name: Build ${{ needs.prepare.outputs.machine }} openwrt 25.12
+    name: Build ${{ needs.prepare.outputs.machine }} ${{ matrix.target }} OpenWrt 25.12
     env:
       Matrix_Target: ${{ matrix.target }}
       Target_CFG_Machine: ${{ needs.prepare.outputs.machine }}
@@ -352,7 +346,7 @@ jobs:
       continue-on-error: true
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true'
       with:
-        name: ${{ env.date3 }}_${{matrix.target}}_firmware_25.12-${{ env.Target_CFG_Machine }}-${{ github.event.inputs.SETIP }}${{ env.Kernel_Test }}${{ env.KERNEL66_NAME }}${{ env.BCM_FULLCONE_NAME }}${{ env.SFE }}${{ env.TRY_BBR_V3_NAME }}${{ env.OPENSSL_3_5_NAME }}${{ env.DOCKER_NAME }}${{ env.WAN_NAME }}${{ env.MAC80211_616_NAME }}${{ env.eBPF }}
+        name: ${{ env.date3 }}_${{matrix.target}}_firmware_25.12-${{ env.Target_CFG_Machine }}-${{ github.event.inputs.SETIP }}${{ env.Kernel_Test }}${{ env.KERNEL618_NAME }}${{ env.BCM_FULLCONE_NAME }}${{ env.SFE }}${{ env.TRY_BBR_V3_NAME }}${{ env.OPENSSL_3_5_NAME }}${{ env.DOCKER_NAME }}${{ env.WAN_NAME }}${{ env.MAC80211_616_NAME }}${{ env.eBPF }}
         path: |
           firmware
 
@@ -361,7 +355,7 @@ jobs:
       continue-on-error: true
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_IPK_DIR == 'true' && steps.afb.outputs.status == 'success'
       with:
-        name: ${{ env.date3 }}_${{matrix.target}}_packages_25.12-${{ env.Target_CFG_Machine }}${{ env.Kernel_Test }}${{ env.KERNEL66_NAME }}${{ env.BCM_FULLCONE_NAME }}${{ env.SFE }}${{ env.TRY_BBR_V3_NAME }}${{ env.OPENSSL_3_5_NAME }}${{ env.DOCKER_NAME }}${{ env.WAN_NAME }}${{ env.MAC80211_616_NAME }}${{ env.eBPF }}
+        name: ${{ env.date3 }}_${{matrix.target}}_packages_25.12-${{ env.Target_CFG_Machine }}${{ env.Kernel_Test }}${{ env.KERNEL618_NAME }}${{ env.BCM_FULLCONE_NAME }}${{ env.SFE }}${{ env.TRY_BBR_V3_NAME }}${{ env.OPENSSL_3_5_NAME }}${{ env.DOCKER_NAME }}${{ env.WAN_NAME }}${{ env.MAC80211_616_NAME }}${{ env.eBPF }}
         path: |
           ipks
 
