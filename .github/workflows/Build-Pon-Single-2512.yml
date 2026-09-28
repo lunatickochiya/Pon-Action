@@ -35,7 +35,7 @@ on:
       patch_repo:
         description: 'Use json patch repo true(1) or false(0) See ReadME'
         required: true
-        default: '{"KERNEL618": "1", "TRY_BBR_V3": "1", "BCM_FULLCONE": "0", "Firewall_Allow_WAN": "0", "ADD_IB": "1", "ADD_SDK": "1", "ADD_eBPF": "0", "DOCKER_BUILDIN": "0"}'
+        default: '{"KERNEL618": "1", "TRY_BBR_V3": "1", "BCM_FULLCONE": "1", "Firewall_Allow_WAN": "0", "ADD_IB": "1", "ADD_SDK": "1", "ADD_eBPF": "0", "DOCKER_BUILDIN": "0"}'
 
       SETIP:
         description: 'Set ip address'
@@ -261,6 +261,11 @@ jobs:
         INPUT_PKGS_CFG_FOO: ${{ github.event.inputs.packages }}
       run: |
         $GITHUB_WORKSPACE/core-2512.sh fix-openwrt-feeds
+        cd openwrt
+        rm -rf feeds/telephony.index
+        ./scripts/feeds update telephony
+        ./scripts/feeds install -a
+        cd ../
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 添加kmod
