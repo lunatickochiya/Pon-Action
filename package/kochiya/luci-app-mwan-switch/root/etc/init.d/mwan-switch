@@ -1,0 +1,85 @@
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=95
+STOP=10
+
+BACKEND=/usr/libexec/mwan-switch
+
+EXTRA_COMMANDS="apply apply_state check monitor"
+EXTRA_HELP="
+	apply	立即按 /etc/config/mwan-switch 应用配置
+	apply_state	应用监控状态（供后台服务内部调用）
+	check	只检查期望状态与当前 UCI 状态，不修改配置（最长 30 秒）
+	monitor	持续监控 WAN2 物理链路（由 mwan-switch-monitor 服务调用）"
+
+run_backend() {
+	[ -x "$BACKEND" ] || {
+		echo "mwan-switch: 找不到执行文件 $BACKEND" >&2
+		return 127
+	}
+	"$BACKEND" "$@"
+}
+
+service_triggers() {
+	# Keep the procd-facing init script deliberately small. Only this UCI package
+	# triggers a reload; the backend itself commits the other packages.
+	procd_add_reload_trigger "mwan-switch"
+}
+
+start_service() {
+	# Register the reload trigger without applying or reloading the network.
+	return 0
+}
+
+reload_service() {
+	run_backend apply
+}
+
+apply() {
+	run_backend apply
+}
+
+apply_state() {
+	run_backend apply_state
+}
+
+check() {
+	local rc check_pid watchdog_pid
+	[ -x "$BACKEND" ] || {
+		echo "mwan-switch: 找不到执行文件 $BACKEND" >&2
+		return 127
+	}
+	echo "mwan-switch: 开始只读检查，最长等待 30 秒..."
+	if command -v timeout >/dev/null 2>&1; then
+		timeout 30 "$BACKEND" check
+		rc=$?
+		case "$rc" in
+			124|137|143) echo "mwan-switch: 状态检查超时，已终止；请提供最后显示的检查阶段" >&2 ;;
+		esac
+		return "$rc"
+	fi
+
+	# Portable fallback for very old BusyBox builds without the timeout applet.
+	"$BACKEND" check &
+	check_pid=$!
+	(
+		sleep 30
+		if kill -0 "$check_pid" 2>/dev/null; then
+			echo "mwan-switch: 状态检查超时，正在终止；请提供最后显示的检查阶段" >&2
+			kill -TERM "$check_pid" 2>/dev/null
+			sleep 1
+			kill -KILL "$check_pid" 2>/dev/null
+		fi
+	) &
+	watchdog_pid=$!
+	wait "$check_pid"
+	rc=$?
+	kill "$watchdog_pid" 2>/dev/null
+	wait "$watchdog_pid" 2>/dev/null
+	return "$rc"
+}
+
+monitor() {
+	run_backend monitor
+}
