@@ -229,12 +229,6 @@ function init_openwrt_patch_2512() {
 		echo "BCM_FULLCONE_NAME=_BCM_FULLCONE" >> $GITHUB_ENV
 	fi
 
-	# 6.18 内核(airoha)使用分支自带的 fullcone 支持（firewall4/nftables），保留 LuCI 的 fullcone 选项
-	if kernel618_enabled; then
-		rm -rf $OpenWrt_PATCH_FILE_DIR/feeds-luci-patch/0004-Revert-luci-app-firewall-add-fullcone.patch
-		echo "----$Matrix_Target----fullcone-luci---"
-	fi
-
 	if [ "$DOCKER_BUILDIN" = "1" ]; then
 		for file0 in package-configs/$OpenWrt_PATCH_FILE_DIR/*.config; do     echo "# docker组件
 CONFIG_PACKAGE_dockerd=y
