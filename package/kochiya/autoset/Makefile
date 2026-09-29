@@ -10,7 +10,7 @@ include $(INCLUDE_DIR)/target.mk
 
 PKG_NAME:=autoset
 PKG_VERSION:=5.0
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 PKG_LICENSE:=GPLv3
 PKG_LICENSE_FILES:=LICENSE
 
@@ -33,6 +33,7 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_$(PKG_NAME)_INCLUDE_uci_ar71xx \
 	CONFIG_PACKAGE_$(PKG_NAME)_INCLUDE_uci_ipq \
 	CONFIG_PACKAGE_$(PKG_NAME)_INCLUDE_uci_airoha \
+	CONFIG_PACKAGE_$(PKG_NAME)_INCLUDE_pon_packages \
 	CONFIG_PACKAGE_$(PKG_NAME)_SIDE_ROUTER_rockchip
 
 define Package/autoset/default
@@ -158,6 +159,12 @@ config PACKAGE_$(PKG_NAME)_SIDE_ROUTER_rockchip
 	bool "Rockchip Side router mode"
 	select PACKAGE_$(PKG_NAME)_INCLUDE_uci_rockchip
 	default n
+
+config PACKAGE_$(PKG_NAME)_INCLUDE_pon_packages
+	bool "Pon packages select"
+	select PACKAGE_luci-app-pon
+	select PACKAGE_luci-app-iptv
+	default y if TARGET_airoha=y
 
 config PACKAGE_$(PKG_NAME)_INCLUDE_RESIZEFS
 	bool "Auto resize rootfs"
