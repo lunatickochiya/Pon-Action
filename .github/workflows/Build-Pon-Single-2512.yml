@@ -21,6 +21,7 @@ on:
         type: choice
         options:
         - 'hg5585f-cu'
+        - 'hg5585f-cu-lite'
         - 'hg5585f-ct'
         - '040g-md'
 
