@@ -103,13 +103,18 @@ function init_gh_env_2512() {
 	local repo_env_file="${OpenWrt_REPO_ENV_FILE:-$OpenWrt_PATCH_FILE_DIR}"
 	source "${GITHUB_WORKSPACE}/env/$repo_env_file.repo"
 	local kernel618
+	local branch
 	kernel618=$(echo "$PATCH_JSON_INPUT" | jq -r '.KERNEL618 // "0"')
-	if [ "$kernel618" = "1" ]; then
+	branch=$(echo "$PATCH_JSON_INPUT" | jq -r '.Branch // empty')
+	if [ -n "$branch" ]; then
+		REPO_URL="${KERNEL618_REPO_URL:-$REPO_URL}"
+		REPO_BRANCH="$branch"
+	elif [ "$kernel618" = "1" ]; then
 		REPO_URL="${KERNEL618_REPO_URL:-$REPO_URL}"
 		REPO_BRANCH="${KERNEL618_REPO_BRANCH:-$REPO_BRANCH}"
 	fi
 	echo -e "KERNEL618=$kernel618" >> "$GITHUB_ENV"
-	echo -e "Branch=$REPO_BRANCH" >> "$GITHUB_ENV"
+	echo -e "Branch=${branch:-$REPO_BRANCH}" >> "$GITHUB_ENV"
 	echo -e "ADD_SKB_RECYCLER=$(echo "$PATCH_JSON_INPUT" | jq -r '.ADD_SKB_RECYCLER // "0"')" >> "$GITHUB_ENV"
 	echo -e "ADD_eBPF=$(echo $PATCH_JSON_INPUT | jq -r ".ADD_eBPF")" >> "$GITHUB_ENV"
 }

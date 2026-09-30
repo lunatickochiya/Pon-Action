@@ -36,7 +36,7 @@ on:
       patch_repo:
         description: 'Use json patch repo true(1) or false(0) See ReadME'
         required: true
-        default: '{"KERNEL618": "1", "TRY_BBR_V3": "1", "BCM_FULLCONE": "1", "Firewall_Allow_WAN": "0", "ADD_IB": "1", "ADD_SDK": "1", "ADD_eBPF": "0", "DOCKER_BUILDIN": "0"}'
+        default: '{"Branch": "openwrt-25.12-pon", "KERNEL618": "1", "TRY_BBR_V3": "1", "BCM_FULLCONE": "1", "Firewall_Allow_WAN": "0", "ADD_IB": "1", "ADD_SDK": "1", "ADD_eBPF": "0", "DOCKER_BUILDIN": "0"}'
 
       SETIP:
         description: 'Set ip address'
@@ -179,8 +179,8 @@ jobs:
     - name: 设置GITHUB_ENV
       id: env
       env:
-        PATCH_JSON_INPUT: ${{ github.event.inputs.patch_repo }}
-        CONFIG_JSON_INPUT: ${{ github.event.inputs.config_repo }}
+        PATCH_JSON_INPUT: ${{ github.event.inputs.patch_repo || github.event.client_payload.patch_repo }}
+        CONFIG_JSON_INPUT: ${{ github.event.inputs.config_repo || github.event.client_payload.config_repo }}
       run: |
         echo ${{matrix.target}}
         $GITHUB_WORKSPACE/core-2512.sh init-gh-env
@@ -190,7 +190,7 @@ jobs:
       id: clone
       run: |
         df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH openwrt --single-branch
+        git clone --single-branch --branch "$REPO_BRANCH" "$REPO_URL" openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
         cd openwrt
         sed -i \
