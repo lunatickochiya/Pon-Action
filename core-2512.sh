@@ -171,6 +171,7 @@ function init_openwrt_patch_2512() {
 		sed -i \
 			-e '/^config BUSYBOX_DEFAULT_NOHUP$/{n;n;s/default n/default y/}' \
 			-e '/^config BUSYBOX_DEFAULT_XXD$/{n;n;s/default n/default y/}' \
+			-e '/^config BUSYBOX_DEFAULT_DEVMEM$/{n;n;s/default n/default y/}' \
 			"$busybox_defaults"
 		echo "----$Matrix_Target----busybox-nohup-xxd---"
 	fi
