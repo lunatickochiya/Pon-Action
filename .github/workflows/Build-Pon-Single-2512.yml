@@ -39,55 +39,9 @@ on:
         default: '{"Branch": "openwrt-25.12-pon", "KERNEL618": "1", "TRY_BBR_V3": "1", "BCM_FULLCONE": "1", "Firewall_Allow_WAN": "0", "ADD_IB": "1", "ADD_SDK": "1", "ADD_eBPF": "0", "DOCKER_BUILDIN": "0"}'
 
       SETIP:
-        description: 'Set ip address'
+        description: 'Set LAN IP address'
         default: '192.168.7.1'
         required: false
-        type: choice
-        options:
-        - '192.168.6.1'
-        - '192.168.7.1'
-        - '192.168.8.1'
-        - '192.168.8.6'
-        - '192.168.8.7'
-        - '192.168.8.8'
-        - '192.168.8.66'
-        - '192.168.9.1'
-        - '192.168.10.1'
-        - '192.168.11.1'
-        - '192.168.12.1'
-        - '192.168.16.1'
-        - '192.168.17.1'
-        - '192.168.17.17'
-        - '192.168.17.8'
-        - '192.168.17.7'
-        - '192.168.17.66'
-        - '192.168.17.77'
-        - '192.168.18.1'
-        - '192.168.19.1'
-        - '192.168.20.1'
-        - '192.168.22.1'
-        - '192.168.33.1'
-        - '192.168.66.1'
-        - '192.168.67.1'
-        - '192.168.77.1'
-        - '192.168.78.1'
-        - '192.168.87.1'
-        - '192.168.88.1'
-        - '192.168.89.1'
-        - '192.168.96.1'
-        - '192.168.99.1'
-        - '192.168.100.1'
-        - '192.168.110.1'
-        - '192.168.120.1'
-        - '192.168.160.1'
-        - '192.168.166.1'
-        - '192.168.167.1'
-        - '192.168.177.1'
-        - '192.168.188.1'
-        - '172.16.0.1'
-        - '172.18.0.1'
-        - '10.0.0.1'
-        - '10.88.0.1'
 
       packages:
         description: 'OpenWrt packages（example: luci-app-example,luci-app-helloworld）'
@@ -231,14 +185,11 @@ jobs:
         $GITHUB_WORKSPACE/core-2512.sh add-openwrt-files
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: 设置 IP 地址
-      if: github.event.inputs.SETIP != '192.168.10.1'
-      id: setip
+    - name: Set LAN IP
+      if: github.event.inputs.SETIP != '' && github.event.inputs.SETIP != '192.168.10.1'
       run: |
         IPSET_VALUE="${{ github.event.inputs.SETIP }}"
         sed -i "s/192\.168\.10\.1/$IPSET_VALUE/g" openwrt/package/kochiya/autoset/files/def_uci/zzz-autoset*
-        grep 'set network.lan.ipaddr=' openwrt/package/kochiya/autoset/files/def_uci/zzz-autoset*
-        echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 更新 & 安装 feeds
       if: steps.files.outputs.status == 'success'
