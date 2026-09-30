@@ -19,10 +19,10 @@ function resolve_build_matrix() {
 	local machine="${Target_CFG_Machine:-}"
 	local config_dir="$workspace/machine-configs/${OpenWrt_PATCH_FILE_DIR:-}"
 	local package_dir="$workspace/package-configs/${OpenWrt_PATCH_FILE_DIR:-}"
-	local config_file file_name target candidate_target matrix firewall
+	local config_file file_name target candidate_target matrix
 	local target_length best_length=999999
 	local ambiguous_target=false
-	local -a iptables_configs
+	local -a nftables_configs
 
 	if [[ ! "$machine" =~ ^[A-Za-z0-9._-]+$ ]]; then
 		device_config_error "Invalid or empty machine name: '$machine'"
@@ -34,19 +34,19 @@ function resolve_build_matrix() {
 	fi
 
 	shopt -s nullglob
-	iptables_configs=("$config_dir/${machine}-"*"-iptables.config")
+	nftables_configs=("$config_dir/${machine}-"*"-nftables.config")
 	shopt -u nullglob
-	if [ "${#iptables_configs[@]}" -eq 0 ]; then
-		device_config_error "No ${machine}-<target>-iptables.config found in $config_dir"
+	if [ "${#nftables_configs[@]}" -eq 0 ]; then
+		device_config_error "No ${machine}-<target>-nftables.config found in $config_dir"
 		return 1
 	fi
 
 	# A machine name can prefix another machine (for example, -v2 and -v2-lite).
 	# The exact machine leaves the shortest <target> suffix in the config filename.
-	for config_file in "${iptables_configs[@]}"; do
+	for config_file in "${nftables_configs[@]}"; do
 		file_name="${config_file##*/}"
 		candidate_target="${file_name#"${machine}-"}"
-		candidate_target="${candidate_target%-iptables.config}"
+		candidate_target="${candidate_target%-nftables.config}"
 		if [[ ! "$candidate_target" =~ ^[A-Za-z0-9._-]+$ ]]; then
 			continue
 		fi
@@ -64,21 +64,19 @@ function resolve_build_matrix() {
 		return 1
 	fi
 
-	for firewall in iptables nftables; do
-		config_file="$config_dir/${machine}-${target}-${firewall}.config"
-		if [ ! -s "$config_file" ]; then
-			device_config_error "Missing machine config: $config_file"
-			return 1
-		fi
-		config_file="$package_dir/${machine}-${target}-${firewall}.config"
-		# 允许空的 package config（占位后补内容），这里只要求文件存在
-		if [ ! -f "$config_file" ]; then
-			device_config_error "Missing package config: $config_file"
-			return 1
-		fi
-	done
+	config_file="$config_dir/${machine}-${target}-nftables.config"
+	if [ ! -s "$config_file" ]; then
+		device_config_error "Missing machine config: $config_file"
+		return 1
+	fi
+	config_file="$package_dir/${machine}-${target}-nftables.config"
+	# 允许空的 package config（占位后补内容），这里只要求文件存在
+	if [ ! -f "$config_file" ]; then
+		device_config_error "Missing package config: $config_file"
+		return 1
+	fi
 
-	printf -v matrix '{"include":[{"target":"%s-iptables"},{"target":"%s-nftables"}]}' "$target" "$target"
+	printf -v matrix '{"include":[{"target":"%s-nftables"}]}' "$target"
 	echo "Resolved $machine to target $target"
 	echo "Generated matrix: $matrix"
 	if [ -n "${GITHUB_OUTPUT:-}" ]; then
