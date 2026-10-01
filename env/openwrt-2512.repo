@@ -1,8 +1,6 @@
-REPO_URL="https://github.com/openwrt/openwrt"
-REPO_BRANCH="openwrt-25.12"
-# KERNEL618=1 时使用 6.18 内核源码仓库/分支
-KERNEL618_REPO_URL="https://${KERNEL618_REPO_TOKEN}@github.com/lunatickochiya/openwrt-ipq-2410.git"
-KERNEL618_REPO_BRANCH="openwrt-25.12-pon"
+# 默认使用 6.18 内核的 PON 源码仓库/分支
+REPO_URL="https://${PON_REPO_TOKEN}@github.com/lunatickochiya/openwrt-ipq-2410.git"
+REPO_BRANCH="openwrt-25.12-pon"
 DIY_SH="diy-2410.sh"
 DIY_SH_AFB="after_build.sh"
 DIY_SH_RFC="refineconfig.sh"
