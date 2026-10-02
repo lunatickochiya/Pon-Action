@@ -303,7 +303,7 @@ jobs:
       continue-on-error: true
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true'
       with:
-        name: ${{ env.date3 }}_${{matrix.target}}_firmware_25.12-${{ env.Target_CFG_Machine }}-${{ github.event.inputs.SETIP }}${{ env.Kernel_Test }}${{ env.BCM_FULLCONE_NAME }}${{ env.SFE }}${{ env.TRY_BBR_V3_NAME }}${{ env.OPENSSL_3_5_NAME }}${{ env.DOCKER_NAME }}${{ env.WAN_NAME }}${{ env.MAC80211_616_NAME }}${{ env.eBPF }}
+        name: ${{ env.date3 }}_${{matrix.target}}_firmware_25.12-${{ env.Target_CFG_Machine }}-${{ github.event.inputs.SETIP }}${{ env.Kernel_Test }}${{ env.BCM_FULLCONE_NAME }}${{ env.SFE }}${{ env.TRY_BBR_V3_NAME }}${{ env.OPENSSL_3_5_NAME }}${{ env.DOCKER_NAME }}${{ env.WAN_NAME }}${{ env.MAC80211_616_NAME }}${{ env.eBPF }}_${{ env.Branch }}
         path: |
           firmware
 
@@ -312,7 +312,7 @@ jobs:
       continue-on-error: true
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_IPK_DIR == 'true' && steps.afb.outputs.status == 'success'
       with:
-        name: ${{ env.date3 }}_${{matrix.target}}_packages_25.12-${{ env.Target_CFG_Machine }}${{ env.Kernel_Test }}${{ env.BCM_FULLCONE_NAME }}${{ env.SFE }}${{ env.TRY_BBR_V3_NAME }}${{ env.OPENSSL_3_5_NAME }}${{ env.DOCKER_NAME }}${{ env.WAN_NAME }}${{ env.MAC80211_616_NAME }}${{ env.eBPF }}
+        name: ${{ env.date3 }}_${{matrix.target}}_packages_25.12-${{ env.Target_CFG_Machine }}${{ env.Kernel_Test }}${{ env.BCM_FULLCONE_NAME }}${{ env.SFE }}${{ env.TRY_BBR_V3_NAME }}${{ env.OPENSSL_3_5_NAME }}${{ env.DOCKER_NAME }}${{ env.WAN_NAME }}${{ env.MAC80211_616_NAME }}${{ env.eBPF }}_${{ env.Branch }}
         path: |
           ipks
 
