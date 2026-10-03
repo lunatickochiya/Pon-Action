@@ -33,6 +33,15 @@ on:
         - 'true'
         - 'false'
 
+      IPTV_PLUGIN:
+        description: 'Airoha IPTV plugin（默认 luci-app-iptv）'
+        required: true
+        default: 'luci-app-iptv'
+        type: choice
+        options:
+        - 'luci-app-iptv'
+        - 'luci-app-iptv-cmcc'
+
       patch_repo:
         description: 'Use json patch repo true(1) or false(0) See ReadME'
         required: true
@@ -135,6 +144,7 @@ jobs:
       env:
         PATCH_JSON_INPUT: ${{ github.event.inputs.patch_repo || github.event.client_payload.patch_repo }}
         CONFIG_JSON_INPUT: ${{ github.event.inputs.config_repo || github.event.client_payload.config_repo }}
+        IPTV_PLUGIN_INPUT: ${{ github.event.inputs.IPTV_PLUGIN || github.event.client_payload.IPTV_PLUGIN }}
       run: |
         echo ${{matrix.target}}
         $GITHUB_WORKSPACE/core-2512.sh init-gh-env
@@ -346,6 +356,9 @@ jobs:
         [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
         [ $UPLOAD_WETRANSFER = true ] && echo "🔗 [WeTransfer](${{ steps.wetransfer.outputs.url }})" >> release.txt
         echo "🔗 ${{ env.BCM_FULLCONE_NAME }}${{ env.SFE }}${{ env.TRY_BBR_V3_NAME }}${{ env.OPENSSL_3_5_NAME }}" >> release.txt
+        if [[ "${{ matrix.target }}" == airoha-* ]]; then
+          echo "- IPTV 插件: ${{ env.IPTV_PLUGIN }}" >> release.txt
+        fi
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 上传固件发布

@@ -34,6 +34,8 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_$(PKG_NAME)_INCLUDE_uci_ipq \
 	CONFIG_PACKAGE_$(PKG_NAME)_INCLUDE_uci_airoha \
 	CONFIG_PACKAGE_$(PKG_NAME)_INCLUDE_pon_packages \
+	CONFIG_PACKAGE_$(PKG_NAME)_IPTV_LUCI_APP_IPTV \
+	CONFIG_PACKAGE_$(PKG_NAME)_IPTV_LUCI_APP_IPTV_CMCC \
 	CONFIG_PACKAGE_$(PKG_NAME)_SIDE_ROUTER_rockchip
 
 define Package/autoset/default
@@ -163,8 +165,29 @@ config PACKAGE_$(PKG_NAME)_SIDE_ROUTER_rockchip
 config PACKAGE_$(PKG_NAME)_INCLUDE_pon_packages
 	bool "Pon packages select"
 	select PACKAGE_luci-app-pon
-	select PACKAGE_luci-app-iptv
 	default y if TARGET_airoha=y
+
+if TARGET_airoha
+
+choice
+	prompt "Select IPTV plugin"
+	depends on PACKAGE_$(PKG_NAME)_INCLUDE_pon_packages
+	default PACKAGE_$(PKG_NAME)_IPTV_LUCI_APP_IPTV
+	help
+	  Airoha PON 机型选择编译哪一个 IPTV 插件，默认 luci-app-iptv。
+	  该选项只对 Airoha 机型显示。
+
+config PACKAGE_$(PKG_NAME)_IPTV_LUCI_APP_IPTV
+	bool "luci-app-iptv"
+	select PACKAGE_luci-app-iptv
+
+config PACKAGE_$(PKG_NAME)_IPTV_LUCI_APP_IPTV_CMCC
+	bool "luci-app-iptv-cmcc"
+	select PACKAGE_luci-app-iptv-cmcc
+
+endchoice
+
+endif
 
 config PACKAGE_$(PKG_NAME)_INCLUDE_RESIZEFS
 	bool "Auto resize rootfs"

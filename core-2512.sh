@@ -108,6 +108,30 @@ function init_gh_env_2512() {
 	echo -e "ADD_SKB_RECYCLER=$(echo "$PATCH_JSON_INPUT" | jq -r '.ADD_SKB_RECYCLER // "0"')" >> "$GITHUB_ENV"
 	echo -e "ADD_eBPF=$(echo $PATCH_JSON_INPUT | jq -r ".ADD_eBPF")" >> "$GITHUB_ENV"
 }
+# airoha IPTV 插件选择，返回对应的 autoset Kconfig choice 符号
+function iptv_plugin_symbol() {
+	case "${1:-}" in
+		luci-app-iptv) echo "PACKAGE_autoset_IPTV_LUCI_APP_IPTV" ;;
+		luci-app-iptv-cmcc) echo "PACKAGE_autoset_IPTV_LUCI_APP_IPTV_CMCC" ;;
+		*) return 1 ;;
+	esac
+}
+function iptv_plugin_input_set() {
+	local iptv_plugin="${IPTV_PLUGIN_INPUT:-}"
+
+	if [ -z "$iptv_plugin" ] && [ -n "${PATCH_JSON_INPUT:-}" ]; then
+		iptv_plugin=$(echo "$PATCH_JSON_INPUT" | jq -r '.IPTV_PLUGIN // empty')
+	fi
+	iptv_plugin="${iptv_plugin:-luci-app-iptv}"
+
+	if ! iptv_plugin_symbol "$iptv_plugin" >/dev/null; then
+		device_config_error "Unsupported IPTV plugin: '$iptv_plugin' (expected luci-app-iptv or luci-app-iptv-cmcc)"
+		return 1
+	fi
+
+	echo "IPTV_PLUGIN=$iptv_plugin" >> "$GITHUB_ENV"
+	echo "----$Matrix_Target----IPTV: $iptv_plugin---"
+}
 function config_json_input_set() {
 	echo -e "Cache=$(echo $CONFIG_JSON_INPUT | jq -r ".Cache")" >> "$GITHUB_ENV"
 	echo -e "CacheLinux=$(echo $CONFIG_JSON_INPUT | jq -r ".CacheLinux")" >> "$GITHUB_ENV"
@@ -574,6 +598,25 @@ CONFIG_PACKAGE_firewall=y
 # CONFIG_PACKAGE_firewall4 is not set
 EOF
 	fi
+
+	# airoha 机型注入 IPTV 插件选择（默认 luci-app-iptv）；
+	# 其他机型不显示 autoset 的 Select IPTV plugin 选项，也不注入。
+	if [[ "$Matrix_Target" == airoha-* ]]; then
+		local iptv_plugin="${IPTV_PLUGIN:-luci-app-iptv}"
+		local iptv_symbol
+
+		iptv_symbol=$(iptv_plugin_symbol "$iptv_plugin") || {
+			device_config_error "Unsupported IPTV plugin: '$iptv_plugin'"
+			return 1
+		}
+		cat >> openwrt/.config <<EOF
+
+# IPTV 插件选择
+CONFIG_PACKAGE_autoset_INCLUDE_pon_packages=y
+CONFIG_${iptv_symbol}=y
+EOF
+		echo "----$Matrix_Target----IPTV: $iptv_plugin---"
+	fi
 }
 function patch_openwrt_feeds() {
     for packagepatch in $( ls feeds/packages/feeds-packages-patch ); do
@@ -775,6 +818,7 @@ case "${1:-}" in
 		;;
 	init-gh-env)
 		init_gh_env_2512
+		iptv_plugin_input_set
 		config_json_input_set
 		patch_json_input_set
 		init_gh_env_common
