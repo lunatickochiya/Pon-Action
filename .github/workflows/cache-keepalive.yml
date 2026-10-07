@@ -5,6 +5,9 @@ name: Keep Cache Alive
 #   <target><eBPF><Branch>-cache-openwrt-<toolchain-hash>-<timestamp>
 # 每 5 天用 lookup-only（只查询不下载）触碰各 target 的最近缓存，
 # 保证常用机型不用每次重编工具链。
+# 注意：缓存匹配是 (key, version)，version 由 path 计算（sha256(paths+压缩+盐)）。
+# path 必须与 cachewrtbuild 保存时完全一致：staging_dir/host*、staging_dir/tool*、
+# .ccache（ccache: 'true'），否则 restore-keys 前缀再对也永远 miss。
 # 参考：qwe3017/Actions-OpenWrt-AN758X/.github/workflows/cache-keepalive.yml
 on:
   schedule:
@@ -20,7 +23,10 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@v5
         with:
-          path: /tmp/dummy
+          path: |
+            staging_dir/host*
+            staging_dir/tool*
+            .ccache
           key: airoha-iptables_eBPF
           restore-keys: airoha-iptables_eBPF
           lookup-only: true
@@ -30,7 +36,10 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@v5
         with:
-          path: /tmp/dummy
+          path: |
+            staging_dir/host*
+            staging_dir/tool*
+            .ccache
           key: airoha-iptables
           restore-keys: airoha-iptables
           lookup-only: true
@@ -40,7 +49,10 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@v5
         with:
-          path: /tmp/dummy
+          path: |
+            staging_dir/host*
+            staging_dir/tool*
+            .ccache
           key: airoha-nftables_eBPF
           restore-keys: airoha-nftables_eBPF
           lookup-only: true
@@ -50,7 +62,10 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@v5
         with:
-          path: /tmp/dummy
+          path: |
+            staging_dir/host*
+            staging_dir/tool*
+            .ccache
           key: airoha-nftables
           restore-keys: airoha-nftables
           lookup-only: true
