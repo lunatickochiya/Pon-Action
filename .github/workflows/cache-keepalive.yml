@@ -1,0 +1,64 @@
+name: Keep Cache Alive
+
+# actions/cache 的条目 7 天不访问会被回收。
+# cachewrtbuild 生成的缓存 key 形如：
+#   <target><eBPF><Branch>-cache-openwrt-<toolchain-hash>-<timestamp>
+# 每 5 天用 lookup-only（只查询不下载）触碰各 target 的最近缓存，
+# 保证常用机型不用每次重编工具链。
+# 参考：qwe3017/Actions-OpenWrt-AN758X/.github/workflows/cache-keepalive.yml
+on:
+  schedule:
+    - cron: '0 0 */5 * *'
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Touch airoha-iptables_eBPF
+        id: airoha_iptables_ebpf
+        continue-on-error: true
+        uses: actions/cache/restore@v5
+        with:
+          path: /tmp/dummy
+          key: airoha-iptables_eBPF
+          restore-keys: airoha-iptables_eBPF
+          lookup-only: true
+
+      - name: Touch airoha-iptables
+        id: airoha_iptables
+        continue-on-error: true
+        uses: actions/cache/restore@v5
+        with:
+          path: /tmp/dummy
+          key: airoha-iptables
+          restore-keys: airoha-iptables
+          lookup-only: true
+
+      - name: Touch airoha-nftables_eBPF
+        id: airoha_nftables_ebpf
+        continue-on-error: true
+        uses: actions/cache/restore@v5
+        with:
+          path: /tmp/dummy
+          key: airoha-nftables_eBPF
+          restore-keys: airoha-nftables_eBPF
+          lookup-only: true
+
+      - name: Touch airoha-nftables
+        id: airoha_nftables
+        continue-on-error: true
+        uses: actions/cache/restore@v5
+        with:
+          path: /tmp/dummy
+          key: airoha-nftables
+          restore-keys: airoha-nftables
+          lookup-only: true
+
+      - name: Summary
+        run: |
+          echo "matched cache keys:"
+          echo "  airoha-iptables_eBPF: ${{ steps.airoha_iptables_ebpf.outputs.cache-matched-key }}"
+          echo "  airoha-iptables: ${{ steps.airoha_iptables.outputs.cache-matched-key }}"
+          echo "  airoha-nftables_eBPF: ${{ steps.airoha_nftables_ebpf.outputs.cache-matched-key }}"
+          echo "  airoha-nftables: ${{ steps.airoha_nftables.outputs.cache-matched-key }}"
