@@ -76,6 +76,8 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       machine: ${{ steps.set-matrix.outputs.machine }}
+      allkmod: ${{ steps.switches.outputs.allkmod }}
+      addsdk: ${{ steps.switches.outputs.addsdk }}
     env:
       Target_CFG_Machine: ${{ github.event.inputs.MACH || github.event.client_payload.MACH }}
     steps:
@@ -85,14 +87,32 @@ jobs:
       - name: 生成矩阵配置
         id: set-matrix
         run: bash "$GITHUB_WORKSPACE/core-2512.sh" resolve-build-matrix
+
+      - name: 解析构建开关
+        id: switches
+        env:
+          CONFIG_JSON_INPUT: ${{ github.event.inputs.config_repo || github.event.client_payload.config_repo }}
+          PATCH_JSON_INPUT: ${{ github.event.inputs.patch_repo || github.event.client_payload.patch_repo }}
+        run: |
+          [ -n "$CONFIG_JSON_INPUT" ] || CONFIG_JSON_INPUT='{}'
+          [ -n "$PATCH_JSON_INPUT" ] || PATCH_JSON_INPUT='{}'
+          ALLKMOD=$(echo "$CONFIG_JSON_INPUT" | jq -r '.ALLKMOD // "0"')
+          ADD_SDK=$(echo "$PATCH_JSON_INPUT" | jq -r '.ADD_SDK // "0"')
+          echo "allkmod=$ALLKMOD" >> "$GITHUB_OUTPUT"
+          echo "addsdk=$ADD_SDK" >> "$GITHUB_OUTPUT"
+          echo "::notice ::ALLKMOD=$ALLKMOD ADD_SDK=$ADD_SDK（ALLKMOD=1 时全量 kmod 由独立 kmods 任务用 SDK 编译）"
  
   build:
     runs-on: Ubuntu-24.04
-    timeout-minutes: 720
+    # GitHub 单个 job 上限 6 小时；ALLKMOD 的全量 kmod 编译已拆到 kmods 任务
+    timeout-minutes: 350
     needs: prepare
     strategy:
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     name: Build ${{ needs.prepare.outputs.machine }} ${{ matrix.target }} OpenWrt 25.12
+    outputs:
+      # 供 kmods 任务把产物追加到同一个 Release（两个 job 的 env.date 不同，不能各自计算 tag）
+      tag: ${{ steps.tag.outputs.tag }}
     env:
       Matrix_Target: ${{ matrix.target }}
       Target_CFG_Machine: ${{ needs.prepare.outputs.machine }}
@@ -230,18 +250,30 @@ jobs:
         cd ../
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: 添加kmod
-      if: steps.config.outputs.status == 'success' && env.ALLKMOD == '1'
-      id: config2
-      run: |
-        $GITHUB_WORKSPACE/core-2512.sh add-openwrt-kmods
-        echo "status=success" >> $GITHUB_OUTPUT
-
     - name: Run awk command
       if: steps.config.outputs.status == 'success'
       working-directory: ./openwrt
       run: |
         $GITHUB_WORKSPACE/core-2512.sh awk-openwrt-config
+
+    - name: 打包openwrt源码(供kmods任务做SDK的base feed)
+      if: env.ALLKMOD == '1' && steps.config.outputs.status == 'success'
+      working-directory: /workdir
+      run: |
+        # 只需要上一步打过补丁的 package/，SDK 的其余部分（tools/target/kernel 等）用自己的
+        # package/feeds 是 feeds install 生成的符号链接，不打包，由 kmods 任务重新生成
+        tar -I 'zstd -T0 -3' -cf "$GITHUB_WORKSPACE/openwrt-src.tar.zst" \
+          --exclude='./package/feeds' \
+          -C openwrt ./package
+        ls -lh "$GITHUB_WORKSPACE/openwrt-src.tar.zst"
+
+    - name: 上传openwrt源码
+      uses: actions/upload-artifact@main
+      continue-on-error: true
+      if: env.ALLKMOD == '1' && steps.config.outputs.status == 'success'
+      with:
+        name: ${{ env.Target_CFG_Machine }}-${{matrix.target}}-openwrt-src
+        path: openwrt-src.tar.zst
 
     - name: 下载包文件
       if: steps.config.outputs.status == 'success'
@@ -280,6 +312,20 @@ jobs:
         path: |
           openwrt/bin/
 
+    - name: 打包SDK（供kmods任务）
+      if: steps.compile.outputs.status == 'success' && env.ALLKMOD == '1'
+      run: |
+        cp -f openwrt/bin/targets/*/*/*sdk*.tar.zst ./openwrt-sdk.tar.zst
+        ls -lh openwrt-sdk.tar.zst
+
+    - name: 上传SDK（供kmods任务）
+      uses: actions/upload-artifact@main
+      continue-on-error: true
+      if: steps.compile.outputs.status == 'success' && env.ALLKMOD == '1'
+      with:
+        name: ${{ env.Target_CFG_Machine }}-${{matrix.target}}-sdk
+        path: openwrt-sdk.tar.zst
+
     - name: 打包ipk成zip文件
       id: afb
       continue-on-error: true
@@ -293,10 +339,14 @@ jobs:
       if: env.UPLOAD_FIRMWARE == 'true' && steps.afb.outputs.status == 'success' && !cancelled()
       run: |
         mkdir -p firmware ipks
-        [ ${{ env.UPLOAD_RELEASE}} = 1 ] && cp -u -f openwrt/kernelipks.zip firmware
         [ ${{ env.UPLOAD_RELEASE}} = 1 ] && cp -u -f openwrt/ipks.zip firmware
-        cp -u -f openwrt/kernelipks.zip ipks
         cp -u -f openwrt/ipks.zip ipks
+        # ALLKMOD=1：全量 kmod 由 kmods 任务用 SDK 编译后追加到同一个 Release，
+        # 这里不再携带固件构建自动产生的少量 kernelipks，避免后续同名覆盖。
+        if [ "${ALLKMOD}" != "1" ]; then
+          [ ${{ env.UPLOAD_RELEASE}} = 1 ] && cp -u -f openwrt/kernelipks.zip firmware
+          cp -u -f openwrt/kernelipks.zip ipks
+        fi
         mv -f openwrt/bin/targets/*/*/{*combined*,*ext4*,*sdk*,*imagebuilder*,*buildinfo*,*manifest*,*json*,*sha256sums*} ./firmware/ 2>/dev/null || true
         [ $UPLOAD_SYSUPGRADE = true ] && mv -f openwrt/bin/targets/*/*/{*combined*,*sysupgrade*,*openwrt*,*initramfs*,*factory*} ./firmware/ 2>/dev/null || true
         cp openwrt/.config  ./firmware/${{matrix.target}}.config
@@ -348,6 +398,7 @@ jobs:
       id: tag
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == '1' && !cancelled()
       run: |
+        echo "tag=${{ env.date }}_${{matrix.target}}-${{ env.Target_CFG_Machine }}-openwrt-2512" >> "$GITHUB_OUTPUT"
         touch release.txt
         $GITHUB_WORKSPACE/gen-sha256sum.sh
         echo "# 当前固件IP地址："${{ github.event.inputs.SETIP }}" " >> release.txt
@@ -369,7 +420,7 @@ jobs:
       with:
         files: "${{ env.FIRMWARE }}/*"
         name: ${{ env.date }} ${{matrix.target}}-${{ env.Target_CFG_Machine }}-openwrt-2512
-        tag_name: ${{ env.date }}_${{matrix.target}}-${{ env.Target_CFG_Machine }}-openwrt-2512
+        tag_name: ${{ steps.tag.outputs.tag }}
         body_path: release.txt
 
     - name: 删除工作流
@@ -388,3 +439,179 @@ jobs:
         delete_tags: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  kmods:
+    runs-on: Ubuntu-24.04
+    # GitHub 单个 job 上限 6 小时；SDK 已带工具链与内核，这里只编译全量 kmod
+    timeout-minutes: 350
+    needs: [prepare, build]
+    if: needs.prepare.outputs.allkmod == '1'
+    strategy:
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    name: Build ${{ needs.prepare.outputs.machine }} ${{ matrix.target }} Kmods(SDK) OpenWrt 25.12
+    env:
+      Matrix_Target: ${{ matrix.target }}
+      Target_CFG_Machine: ${{ needs.prepare.outputs.machine }}
+
+    steps:
+    - name: 检查
+      uses: actions/checkout@main
+
+    - name: 释放Ubuntu磁盘空间
+      uses: endersonmenezes/free-disk-space@v2
+      with:
+        remove_android: true
+        remove_dotnet: true
+        remove_haskell: true
+        remove_tool_cache: true
+        remove_swap: true
+        remove_packages: "azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox postgresql* temurin-* *llvm* mysql* dotnet-sdk-*"
+        remove_packages_one_command: true
+        remove_folders: "/usr/share/swift /usr/share/miniconda /usr/share/az* /usr/share/glade* /usr/local/lib/node_modules /usr/local/share/chromium /usr/local/share/powershell"
+        testing: false
+
+    - name: 初始化环境
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        chmod +x gen-sha256sum.sh add-test-packages.sh add-sfe-packages.sh core-2512.sh
+        $GITHUB_WORKSPACE/core-2512.sh init-pkg-env
+
+    - name: 设置GITHUB_ENV
+      id: env
+      env:
+        PATCH_JSON_INPUT: ${{ github.event.inputs.patch_repo || github.event.client_payload.patch_repo }}
+        CONFIG_JSON_INPUT: ${{ github.event.inputs.config_repo || github.event.client_payload.config_repo }}
+        IPTV_PLUGIN_INPUT: ${{ github.event.inputs.IPTV_PLUGIN || github.event.client_payload.IPTV_PLUGIN }}
+      run: |
+        echo ${{matrix.target}}
+        $GITHUB_WORKSPACE/core-2512.sh init-gh-env
+
+    - name: 下载SDK与源码
+      uses: actions/download-artifact@main
+      with:
+        pattern: ${{ needs.prepare.outputs.machine }}-${{ matrix.target }}-*
+        path: /workdir/in
+        merge-multiple: true
+
+    - name: 解压SDK与源码
+      working-directory: /workdir
+      run: |
+        ls -la in
+        mkdir -p sdk openwrt-src
+        tar --zstd -xf in/openwrt-sdk.tar.zst -C sdk --strip-components=1
+        tar --zstd -xf in/openwrt-src.tar.zst -C openwrt-src
+        rm -rf in
+        ln -sfn /workdir/sdk /workdir/openwrt
+        ln -sfn /workdir/openwrt "$GITHUB_WORKSPACE/openwrt"
+        ls sdk | head -20
+        du -sh sdk openwrt-src
+
+    - name: 增加磁盘空间
+      run: |
+        sudo mkdir -p -m 777 /mnt/openwrt
+        mv /workdir/sdk/build_dir /mnt/openwrt/build_dir
+        rm -rf /workdir/sdk/dl
+        mkdir -p /mnt/openwrt/dl
+        ln -sf /mnt/openwrt/build_dir /workdir/sdk/build_dir
+        ln -sf /mnt/openwrt/dl /workdir/sdk/dl
+        df -hT
+        ls -l /workdir/sdk | grep '^l'
+
+    - name: 配置SDK feeds（base改为上一步openwrt源码）
+      working-directory: /workdir/sdk
+      run: |
+        SRC=/workdir/openwrt-src
+        # SDK 生成时已清空 base 行（原地址带仓库凭证，见 core-2512.sh），
+        # 这里把 base 指向本仓上一步打过补丁的 openwrt package/；兼容仍存在 base 行的旧 SDK。
+        if grep -qE '^src-git[[:space:]]+--root=package[[:space:]]+base[[:space:]]' feeds.conf.default; then
+          sed -i -E "s#^src-git[[:space:]]+--root=package[[:space:]]+base[[:space:]].*#src-link --root=package base ${SRC}#" feeds.conf.default
+        else
+          sed -i "1i src-link --root=package base ${SRC}" feeds.conf.default
+        fi
+        grep -q "^src-link --root=package base ${SRC}$" feeds.conf.default || { echo "::error ::SDK base feed 替换失败"; exit 1; }
+        cat feeds.conf.default
+
+    - name: 更新 & 安装 feeds
+      working-directory: /workdir/sdk
+      run: |
+        ./scripts/feeds update -a
+        # 与主构建保持一致：BCM_FULLCONE=1 时不应用 luci fullcone 的 Revert 补丁
+        if [ "$BCM_FULLCONE" = "1" ]; then
+          rm -f "$GITHUB_WORKSPACE/$OpenWrt_PATCH_FILE_DIR/feeds-luci-patch/0004-Revert-luci-app-firewall-add-fullcone.patch"
+        fi
+        # 给 SDK 的 feeds 打上与主构建一致的仓库补丁
+        # （v4l2loopback/xtables-addons/dahdi/oslec 等 kmod 的 Linux 6.18 修复）
+        "$GITHUB_WORKSPACE/core-2512.sh" patch-openwrt-feeds "$PWD"
+        ./scripts/feeds install -a
+
+    - name: 生成基础配置（只保留kmod）
+      working-directory: /workdir/sdk
+      run: |
+        # SDK 自带 CONFIG_ALL/CONFIG_ALL_KMODS/CONFIG_ALL_NONSHARED=y，
+        # 且 Config-build.in 会带上固件构建时选中的包；这里先全部关掉，
+        # 后续只把 kmod 置 =m，避免在 SDK 里重编整套固件包。
+        rm -f .config
+        printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n' > .config
+        make defconfig
+        sed -i -E '/^CONFIG_PACKAGE_kmod/!s/^CONFIG_PACKAGE_([^=]+)=[ym]$/# CONFIG_PACKAGE_\1 is not set/' .config
+        make defconfig
+
+    - name: 应用SFE的kmod排除列表调整
+      if: github.event.inputs.SFE_BUILDIN == 'true'
+      run: |
+        $GITHUB_WORKSPACE/core-2512.sh add-openwrt-sfe-kmods
+
+    - name: 添加kmod（全量=m）
+      run: |
+        $GITHUB_WORKSPACE/core-2512.sh add-openwrt-kmods
+
+    - name: Run awk command
+      working-directory: ./openwrt
+      run: |
+        $GITHUB_WORKSPACE/core-2512.sh awk-openwrt-config
+
+    - name: 下载包文件
+      working-directory: /workdir/sdk
+      run: |
+        make download -j$(nproc)
+        find dl -size -1024c -exec rm -f {} \;
+
+    - name: 编译kmods
+      id: compile
+      working-directory: /workdir/sdk
+      run: |
+        echo -e "$(($(nproc)+1)) thread compile"
+        make -j$(($(nproc)+1)) || make -j1 V=s
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: 检查空间使用情况
+      if: (!cancelled())
+      run: df -hT
+
+    - name: 打包kmods
+      id: afb
+      continue-on-error: true
+      if: steps.compile.outputs.status == 'success' && !cancelled()
+      working-directory: /workdir/sdk
+      run: |
+        mkdir -p kernelipks
+        cp -u -f bin/targets/*/*/packages/* kernelipks/
+        ls kernelipks | wc -l
+        zip -qq -r kernelipks.zip kernelipks
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: 上传kmods目录
+      uses: actions/upload-artifact@main
+      continue-on-error: true
+      if: steps.afb.outputs.status == 'success' && !cancelled()
+      with:
+        name: ${{ env.date3 }}_${{matrix.target}}_kmods_25.12-${{ env.Target_CFG_Machine }}
+        path: /workdir/sdk/kernelipks.zip
+
+    - name: 上传kmods到Release
+      if: steps.afb.outputs.status == 'success' && env.UPLOAD_RELEASE == '1' && needs.build.outputs.tag != '' && !cancelled()
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release upload "${{ needs.build.outputs.tag }}" /workdir/sdk/kernelipks.zip --clobber

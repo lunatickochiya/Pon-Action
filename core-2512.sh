@@ -193,6 +193,18 @@ function init_openwrt_patch_2512() {
 			"$busybox_defaults"
 		echo "----$Matrix_Target----busybox-nohup-xxd---"
 	fi
+	# SDK 的 feeds.conf.default 第一行 base 由 target/sdk/Makefile 从 git remote.origin.url 生成，
+	# 而仓库地址（REPO_URL）里带 PON_REPO_TOKEN；SDK 会作为 Release 资产发布，
+	# 这里清空 BASE_FEED，生成的 SDK 不再包含带 key 的 base 地址。
+	local sdk_makefile="openwrt/target/sdk/Makefile"
+	local sdk_base_feed_marker="# build: BASE_FEED cleared to avoid leaking repo credentials"
+	if [ -f "$sdk_makefile" ]; then
+		if ! grep -Fq "$sdk_base_feed_marker" "$sdk_makefile"; then
+			printf '\n%s\nBASE_FEED:=\n' "$sdk_base_feed_marker" >> "$sdk_makefile" || return 1
+		fi
+		echo "----$Matrix_Target----sdk-base-feed-cleared---"
+	fi
+
 	if [ "$Firewall_Allow_WAN" = "1" ]; then
 		sed -i '/^	commit$/i\
 		set firewall.@zone[1].input="ACCEPT"
@@ -263,12 +275,16 @@ CONFIG_PACKAGE_luci-app-dockerman=y
 		echo "DOCKER_NAME=_DOCKER" >> $GITHUB_ENV
 	fi
 
-	if [ "$ADD_SDK" = "1" ]; then
+	# ALLKMOD=1 时全量 kmod 由独立的 kmods 任务用 SDK 编译，这里强制生成 SDK
+	if [ "${ADD_SDK:-0}" = "1" ] || [ "${ALLKMOD:-0}" = "1" ]; then
 		for file1 in package-configs/$OpenWrt_PATCH_FILE_DIR/*.config; do     echo "# ADD SDK
 CONFIG_SDK=y
 		" >> "$file1"; done
 		echo "----------sdk-added------"
 		echo "----$Matrix_Target----SDK---"
+		if [ "$ADD_SDK" != "1" ]; then
+			echo "::notice ::ALLKMOD=1，强制生成 SDK 供 kmods 任务使用"
+		fi
 	fi
 
 	if [ "$ADD_eBPF" = "1" ]; then
@@ -655,6 +671,29 @@ function patch_lunatic7() {
         cd ../..
     done
 }
+# 给独立构建树（如 kmods 任务使用的 SDK）的 feeds 应用仓库补丁，
+# 补丁集与主构建 patch_openwrt_feeds 使用的 feeds-packages/luci/telephony/routing-patch 保持一致。
+function patch_standalone_feeds() {
+	local target_dir="${1:-.}"
+	local repo_dir="${GITHUB_WORKSPACE:-$PWD}"
+	local feed feed_patch_dir patch_file
+	local -a feed_patch_feeds=(packages luci telephony routing)
+
+	for feed in "${feed_patch_feeds[@]}"; do
+		feed_patch_dir="$repo_dir/$OpenWrt_PATCH_FILE_DIR/feeds-${feed}-patch"
+		# 目标树中该 feed 不存在，或仓库没有对应补丁集时跳过
+		if [ ! -d "$target_dir/feeds/$feed" ] || [ ! -d "$feed_patch_dir" ]; then
+			continue
+		fi
+		cp -r "$feed_patch_dir" "$target_dir/feeds/$feed/feeds-${feed}-patch" || return 1
+		shopt -s nullglob
+		for patch_file in "$target_dir/feeds/$feed/feeds-${feed}-patch"/*.patch; do
+			echo "Applying feeds-${feed}-patch: ${patch_file##*/}"
+			( cd "$target_dir/feeds/$feed" && patch -p1 --no-backup-if-mismatch < "feeds-${feed}-patch/${patch_file##*/}" ) || return 1
+		done
+		shopt -u nullglob
+	done
+}
 function remove_error_package_not_install() {
 	packages=(
 		"luci-app-smartdns"
@@ -832,6 +871,12 @@ case "${1:-}" in
 	add-openwrt-sfe-2512)
 		add_openwrt_sfe_2512
 		;;
+	add-openwrt-sfe-kmods)
+		add_openwrt_sfe_kmods
+		;;
+	patch-openwrt-feeds)
+		patch_standalone_feeds "${2:-.}"
+		;;
 	add-openwrt-files)
 		add_openwrt_files
 		patch_openwrt_core_pre || exit 1
@@ -847,7 +892,7 @@ case "${1:-}" in
 		awk_openwrt_config
 		;;
 	*)
-		echo "Usage: $0 {resolve-build-matrix|init-pkg-env|init-gh-env|init-openwrt-patch|ln-openwrt|add-openwrt-sfe-2512|add-openwrt-files|add-openwrt-kmods|fix-openwrt-feeds|awk-openwrt-config}" >&2
+		echo "Usage: $0 {resolve-build-matrix|init-pkg-env|init-gh-env|init-openwrt-patch|ln-openwrt|add-openwrt-sfe-2512|add-openwrt-sfe-kmods|add-openwrt-files|add-openwrt-kmods|fix-openwrt-feeds|patch-openwrt-feeds|awk-openwrt-config}" >&2
 		exit 1
 		;;
 esac

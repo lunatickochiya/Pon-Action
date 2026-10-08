@@ -3,8 +3,14 @@ name: Keep Cache Alive
 # actions/cache 的条目 7 天不访问会被回收。
 # cachewrtbuild 生成的缓存 key 形如：
 #   <target><eBPF><Branch>-cache-openwrt-<toolchain-hash>-<timestamp>
-# 每 5 天用 lookup-only（只查询不下载）触碰各 target 的最近缓存，
-# 保证常用机型不用每次重编工具链。
+# 注意：同一大前缀下不同分支的缓存会共存（openwrt-25.12-pon / openwrt-25.12-pon-dev），
+# 而 restore 只命中该前缀下"最新"的一个。若只用 <target><eBPF> 大前缀探测，
+# 较旧分支的缓存永远碰不到（曾出现 ...-pon-cache-...-1790914347 未被 touch 的问题）。
+# 因此除通用兜底外，必须按分支带 -cache-openwrt 后缀做精确前缀探测：
+#   airoha-nftables_eBPFopenwrt-25.12-pon-cache-openwrt      ← 非 dev 分支
+#   airoha-nftables_eBPFopenwrt-25.12-pon-dev-cache-openwrt  ← dev 分支
+# 前缀 ...-pon-cache-openwrt 不会误匹配 ...-pon-dev-cache-openwrt。
+# 本项目只编译 nftables，不再探测 iptables 目标。
 # 注意：缓存匹配是 (key, version)，version 由 path 计算（sha256(paths+压缩+盐)）。
 # path 必须与 cachewrtbuild 保存时完全一致：staging_dir/host*、staging_dir/tool*、
 # .ccache（ccache: 'true'），否则 restore-keys 前缀再对也永远 miss。
@@ -17,9 +23,21 @@ on:
 jobs:
   keepalive:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mixkey:
+          # 按分支精确探测（保证各分支的最新缓存都被 touch）
+          - airoha-nftablesopenwrt-25.12-pon-cache-openwrt
+          - airoha-nftablesopenwrt-25.12-pon-dev-cache-openwrt
+          - airoha-nftables_eBPFopenwrt-25.12-pon-cache-openwrt
+          - airoha-nftables_eBPFopenwrt-25.12-pon-dev-cache-openwrt
+          # 通用兜底：命中各目标大前缀下最新的缓存
+          - airoha-nftables_eBPF
+          - airoha-nftables
     steps:
-      - name: Touch airoha-iptables_eBPF
-        id: airoha_iptables_ebpf
+      - name: Touch ${{ matrix.mixkey }}
+        id: touch
         continue-on-error: true
         uses: actions/cache/restore@v5
         with:
@@ -27,53 +45,11 @@ jobs:
             staging_dir/host*
             staging_dir/tool*
             .ccache
-          key: airoha-iptables_eBPF
-          restore-keys: airoha-iptables_eBPF
-          lookup-only: true
-
-      - name: Touch airoha-iptables
-        id: airoha_iptables
-        continue-on-error: true
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            staging_dir/host*
-            staging_dir/tool*
-            .ccache
-          key: airoha-iptables
-          restore-keys: airoha-iptables
-          lookup-only: true
-
-      - name: Touch airoha-nftables_eBPF
-        id: airoha_nftables_ebpf
-        continue-on-error: true
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            staging_dir/host*
-            staging_dir/tool*
-            .ccache
-          key: airoha-nftables_eBPF
-          restore-keys: airoha-nftables_eBPF
-          lookup-only: true
-
-      - name: Touch airoha-nftables
-        id: airoha_nftables
-        continue-on-error: true
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            staging_dir/host*
-            staging_dir/tool*
-            .ccache
-          key: airoha-nftables
-          restore-keys: airoha-nftables
+          key: ${{ matrix.mixkey }}
+          restore-keys: ${{ matrix.mixkey }}
           lookup-only: true
 
       - name: Summary
         run: |
-          echo "matched cache keys:"
-          echo "  airoha-iptables_eBPF: ${{ steps.airoha_iptables_ebpf.outputs.cache-matched-key }}"
-          echo "  airoha-iptables: ${{ steps.airoha_iptables.outputs.cache-matched-key }}"
-          echo "  airoha-nftables_eBPF: ${{ steps.airoha_nftables_ebpf.outputs.cache-matched-key }}"
-          echo "  airoha-nftables: ${{ steps.airoha_nftables.outputs.cache-matched-key }}"
+          echo "mixkey: ${{ matrix.mixkey }}"
+          echo "matched cache key: ${{ steps.touch.outputs.cache-matched-key }}"
