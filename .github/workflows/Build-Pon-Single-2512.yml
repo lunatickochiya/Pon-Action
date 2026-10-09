@@ -506,17 +506,9 @@ jobs:
         ln -sfn /workdir/openwrt "$GITHUB_WORKSPACE/openwrt"
         ls sdk | head -20
         du -sh sdk openwrt-src
-
-    - name: 增加磁盘空间
-      run: |
-        sudo mkdir -p -m 777 /mnt/openwrt
-        mv /workdir/sdk/build_dir /mnt/openwrt/build_dir
-        rm -rf /workdir/sdk/dl
-        mkdir -p /mnt/openwrt/dl
-        ln -sf /mnt/openwrt/build_dir /workdir/sdk/build_dir
-        ln -sf /mnt/openwrt/dl /workdir/sdk/dl
-        df -hT
-        ls -l /workdir/sdk | grep '^l'
+        # 注意：不要像主构建那样把 build_dir 挪到 /mnt！
+        # SDK 里 fixdep 等宿主工具是包装脚本，用相对路径找 staging_dir/host/lib 下的
+        # ld-linux-x86-64.so.2，build_dir 离开 SDK 根目录会导致 "No such file or directory"。
 
     - name: 配置SDK feeds（base改为上一步openwrt源码）
       working-directory: /workdir/sdk
