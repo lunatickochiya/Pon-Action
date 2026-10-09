@@ -537,16 +537,30 @@ jobs:
         "$GITHUB_WORKSPACE/core-2512.sh" patch-openwrt-feeds "$PWD"
         ./scripts/feeds install -a
 
-    - name: 生成基础配置（只保留kmod）
+    - name: 生成基础配置（只保留kmod选择）
       working-directory: /workdir/sdk
       run: |
-        # SDK 自带 CONFIG_ALL/CONFIG_ALL_KMODS/CONFIG_ALL_NONSHARED=y，
-        # 且 Config-build.in 会带上固件构建时选中的包；这里先全部关掉，
-        # 后续只把 kmod 置 =m，避免在 SDK 里重编整套固件包。
+        # SDK 的 Config-build.in 会把固件构建时选中的包烘焙成 bool/tristate default，
+        # 这些定义会覆盖 .config-package.in 里的真实依赖（例如 libcap-bin 不带 libcap、
+        # xz 不带 liblzma），导致 kmods 任务构建这些用户态包时因缺依赖而失败。
+        # 这里删除非 kmod 的 PACKAGE 烘焙块（保留全部 kmod 选择），用户态包回归正常默认。
+        awk '
+          /^config PACKAGE_/ {
+            if ($2 ~ /^PACKAGE_kmod/) { skip = 0; print; next }
+            skip = 1; next
+          }
+          skip {
+            if ($0 == "") { skip = 0 }
+            next
+          }
+          { print }
+        ' Config-build.in > Config-build.in.new
+        mv Config-build.in.new Config-build.in
+        echo "kept kmod config blocks: $(grep -c '^config PACKAGE_kmod' Config-build.in)"
+
+        # SDK 自带 CONFIG_ALL/CONFIG_ALL_KMODS/CONFIG_ALL_NONSHARED=y，先关掉再 defconfig
         rm -f .config
         printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n' > .config
-        make defconfig
-        sed -i -E '/^CONFIG_PACKAGE_kmod/!s/^CONFIG_PACKAGE_([^=]+)=[ym]$/# CONFIG_PACKAGE_\1 is not set/' .config
         make defconfig
 
     - name: 应用SFE的kmod排除列表调整
