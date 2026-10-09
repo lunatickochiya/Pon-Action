@@ -334,6 +334,20 @@ jobs:
         $GITHUB_WORKSPACE/$DIY_SH_AFB
         echo "status=success" >> $GITHUB_OUTPUT
 
+    - name: 打包step1的kmod包（供kmods任务合并）
+      if: steps.afb.outputs.status == 'success' && env.ALLKMOD == '1'
+      run: |
+        cp -f openwrt/kernelipks.zip ./step1-kernelipks.zip
+        ls -lh step1-kernelipks.zip
+
+    - name: 上传step1的kmod包
+      uses: actions/upload-artifact@main
+      continue-on-error: true
+      if: steps.afb.outputs.status == 'success' && env.ALLKMOD == '1'
+      with:
+        name: ${{ env.Target_CFG_Machine }}-${{matrix.target}}-kernelipks
+        path: step1-kernelipks.zip
+
     - name: 整理文件
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && steps.afb.outputs.status == 'success' && !cancelled()
@@ -558,9 +572,11 @@ jobs:
         mv Config-build.in.new Config-build.in
         echo "kept kmod config blocks: $(grep -c '^config PACKAGE_kmod' Config-build.in)"
 
-        # SDK 自带 CONFIG_ALL/CONFIG_ALL_KMODS/CONFIG_ALL_NONSHARED=y，先关掉再 defconfig
+        # SDK 自带 CONFIG_ALL/CONFIG_ALL_KMODS/CONFIG_ALL_NONSHARED=y，先关掉再 defconfig；
+        # 同时关闭 AUTOREMOVE：SDK 的 Config.in 默认开启会清空各包构建目录，
+        # 导致依赖相邻构建目录的包编译失败（如 fast-classifier 需要 ../shortcut-fe 的 sfe_backport.h）。
         rm -f .config
-        printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n' > .config
+        printf '# CONFIG_ALL is not set\n# CONFIG_ALL_KMODS is not set\n# CONFIG_ALL_NONSHARED is not set\n# CONFIG_AUTOREMOVE is not set\n' > .config
         make defconfig
 
     - name: 应用SFE的kmod排除列表调整
@@ -595,7 +611,7 @@ jobs:
       if: (!cancelled())
       run: df -hT
 
-    - name: 打包kmods
+    - name: 打包kmods（合并step1的kmod并校验vermagic）
       id: afb
       continue-on-error: true
       if: steps.compile.outputs.status == 'success' && !cancelled()
@@ -603,7 +619,42 @@ jobs:
       run: |
         mkdir -p kernelipks
         cp -u -f bin/targets/*/*/packages/* kernelipks/
-        ls kernelipks | wc -l
+        # 合并第一步的 kernelipks：SDK 内核受限无法编译的 kmod 用第一步的产物补齐
+        if [ -f /workdir/in/step1-kernelipks.zip ]; then
+          rm -rf /workdir/step1-kmods && mkdir -p /workdir/step1-kmods
+          unzip -q /workdir/in/step1-kernelipks.zip -d /workdir/step1-kmods
+          cp -n /workdir/step1-kmods/kernelipks/*.apk kernelipks/ || true
+        fi
+        echo "kmod 包数量: $(ls kernelipks | wc -l)"
+
+        # vermagic 校验：SDK 内核即第一步内核，合并进来的 kmod 必须与其一致，
+        # 否则（例如跨内核构建的模块）不能加载，直接失败避免发布坏包。
+        EXPECTED=$(strings -a "$(find build_dir/target-*/linux-*/linux-*/ -name '*.ko' | head -1)" | sed -n 's/^vermagic=//p' | head -1)
+        if [ -z "$EXPECTED" ]; then
+          echo "::error ::无法从 SDK 内核读取 vermagic"
+          exit 1
+        fi
+        echo "期望 vermagic: $EXPECTED"
+        APK_TOOL="$PWD/staging_dir/host/bin/apk"
+        verify_fail=0
+        for pkg in "$PWD"/kernelipks/*.apk; do
+          tmp=$(mktemp -d)
+          if ! ( cd "$tmp" && "$APK_TOOL" extract --allow-untrusted "$pkg" >/dev/null 2>&1 ); then
+            echo "::warning ::apk 解包失败，跳过校验: $(basename "$pkg")"
+            rm -rf "$tmp"
+            continue
+          fi
+          while IFS= read -r ko; do
+            vm=$(strings -a "$ko" | sed -n 's/^vermagic=//p' | head -1)
+            if [ "$vm" != "$EXPECTED" ]; then
+              echo "::error ::vermagic 不一致: $(basename "$pkg") -> '$vm' (期望 '$EXPECTED')"
+              verify_fail=1
+            fi
+          done < <(find "$tmp" -name '*.ko')
+          rm -rf "$tmp"
+        done
+        [ "$verify_fail" = 0 ] || exit 1
+        echo "vermagic 校验通过"
         zip -qq -r kernelipks.zip kernelipks
         echo "status=success" >> $GITHUB_OUTPUT
 
