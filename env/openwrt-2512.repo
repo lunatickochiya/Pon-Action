@@ -1,5 +1,6 @@
 # 默认使用 6.18 内核的 PON 源码仓库/分支
-REPO_URL="https://${PON_REPO_TOKEN}@github.com/lunatickochiya/openwrt-ipq-2410.git"
+# 私有仓库使用只读 Deploy Key（SSH）认证，私钥存放于 secret OPENWRT_REPO_SSH_KEY
+REPO_URL="git@github.com:lunatickochiya/openwrt-ipq-2410.git"
 REPO_BRANCH="openwrt-25.12-pon"
 DIY_SH="diy-2410.sh"
 DIY_SH_AFB="after_build.sh"

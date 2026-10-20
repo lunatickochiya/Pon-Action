@@ -194,8 +194,8 @@ function init_openwrt_patch_2512() {
 		echo "----$Matrix_Target----busybox-nohup-xxd---"
 	fi
 	# SDK 的 feeds.conf.default 第一行 base 由 target/sdk/Makefile 从 git remote.origin.url 生成，
-	# 而仓库地址（REPO_URL）里带 PON_REPO_TOKEN；SDK 会作为 Release 资产发布，
-	# 这里清空 BASE_FEED，生成的 SDK 不再包含带 key 的 base 地址。
+	# 而仓库地址（REPO_URL）指向私有仓库；SDK 会作为 Release 资产发布，
+	# 这里清空 BASE_FEED，生成的 SDK 不再包含私有仓库地址。
 	local sdk_makefile="openwrt/target/sdk/Makefile"
 	local sdk_base_feed_marker="# build: BASE_FEED cleared to avoid leaking repo credentials"
 	if [ -f "$sdk_makefile" ]; then
