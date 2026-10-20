@@ -261,7 +261,7 @@ jobs:
 
     - name: 缓存staging
       uses: HiGarfield/cachewrtbuild@main
-      if: env.Cache == '1' && !cancelled()
+      if: env.Cache == '1' && steps.clone.outputs.status == 'success' && !cancelled()
       with:
         ccache: 'true'
         mixkey: ${{ matrix.target }}${{ env.eBPF }}${{ env.Branch }}
