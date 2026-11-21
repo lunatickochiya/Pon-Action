@@ -252,6 +252,28 @@ jobs:
       run: |
         $GITHUB_WORKSPACE/core-2512.sh awk-openwrt-config
 
+    - name: 下载 kernel 包并校验
+      # 对齐 RK-action c73cf38e：curl 中途断开会让 kernel tarball 不完整，
+      # kernel-headers 解压阶段才暴露；先单独下载并做 xz/gzip 完整性校验。
+      working-directory: ./openwrt
+      run: |
+        for attempt in 1 2 3; do
+          make target/linux/download -j1 V=s >/tmp/kernel-download.log 2>&1 || true
+          bad=0
+          for f in dl/linux-*.tar.xz; do
+            [ -e "$f" ] || continue
+            xz -t "$f" >/dev/null 2>&1 || { bad=1; rm -f "$f"; }
+          done
+          for f in dl/linux-*.tar.gz; do
+            [ -e "$f" ] || continue
+            gzip -t "$f" >/dev/null 2>&1 || { bad=1; rm -f "$f"; }
+          done
+          [ "$bad" = 0 ] && break
+          echo "kernel download incomplete (attempt $attempt), retrying..."
+          tail -20 /tmp/kernel-download.log || true
+          sleep 5
+        done
+
     - name: 编译 tools + toolchain
       working-directory: ./openwrt
       run: |
