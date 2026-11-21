@@ -437,8 +437,14 @@ function add_openwrt_sfe_2512() {
 			openwrt/target/linux/generic/pending-6.18/ || exit 1
 		cp -f "$temp_dir/package/hack-6.18/952-add-net-conntrack-events-support-multiple-registrant.patch" \
 			openwrt/target/linux/generic/hack-6.18/ || exit 1
-		cp -f "$temp_dir/package/hack-6.18/953-net-patch-linux-kernel-to-support-shortcut-fe.patch" \
-			openwrt/target/linux/generic/hack-6.18/ || exit 1
+		local sfe953_local="$OpenWrt_PATCH_FILE_DIR/sfe-953-net-patch-linux-kernel-to-support-shortcut-fe-6.18.60.patch"
+		if [ -f "$sfe953_local" ]; then
+			cp -f "$sfe953_local" \
+				openwrt/target/linux/generic/hack-6.18/953-net-patch-linux-kernel-to-support-shortcut-fe.patch || exit 1
+		else
+			cp -f "$temp_dir/package/hack-6.18/953-net-patch-linux-kernel-to-support-shortcut-fe.patch" \
+				openwrt/target/linux/generic/hack-6.18/ || exit 1
+		fi
 	) || return 1
 
 	grep -q 'CONFIG_NF_CONNTRACK_CHAIN_EVENTS' "$kernel_config" || \
