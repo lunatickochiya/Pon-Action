@@ -1,3 +1,10 @@
+Shortcut-FE 953 fix for Linux 6.18
+
+turboacc hack-6.18/953 still carries the pre-6.18 skbuff.h context: Linux 6.18
+added the "tc_depth:2" bitfield after "unreadable:1", so hunk #1 fails and
+the whole patch aborts.  This corrected copy inserts fast_forwarded before
+tc_depth and keeps every other turboacc hunk unchanged.
+
 --- a/include/linux/if_bridge.h
 +++ b/include/linux/if_bridge.h
 @@ -70,6 +70,9 @@ void brioctl_set(int (*hook)(struct net
@@ -12,17 +19,16 @@
  			       struct list_head *br_ip_list);
 --- a/include/linux/skbuff.h
 +++ b/include/linux/skbuff.h
-@@ -1030,7 +1030,10 @@ struct sk_buff {
+@@ -1031,6 +1031,9 @@
  	__u8			csum_not_inet:1;
  #endif
  	__u8			unreadable:1;
- 	__u8			tc_depth:2;
 +#ifdef CONFIG_SHORTCUT_FE
 +	__u8			fast_forwarded:1;
 +#endif
+ 	__u8			tc_depth:2;
  #if defined(CONFIG_NET_SCHED) || defined(CONFIG_NET_XGRESS)
  	__u16			tc_index;	/* traffic control index */
- #endif
 --- a/include/net/netfilter/nf_conntrack_ecache.h
 +++ b/include/net/netfilter/nf_conntrack_ecache.h
 @@ -72,6 +72,8 @@ struct nf_ct_event_notifier {
