@@ -437,13 +437,26 @@ function add_openwrt_sfe_2512() {
 			openwrt/target/linux/generic/pending-6.18/ || exit 1
 		cp -f "$temp_dir/package/hack-6.18/952-add-net-conntrack-events-support-multiple-registrant.patch" \
 			openwrt/target/linux/generic/hack-6.18/ || exit 1
-		local sfe953_local="$OpenWrt_PATCH_FILE_DIR/sfe-953-net-patch-linux-kernel-to-support-shortcut-fe-6.18.60.patch"
-		if [ -f "$sfe953_local" ]; then
-			cp -f "$sfe953_local" \
+		cp -f "$temp_dir/package/hack-6.18/953-net-patch-linux-kernel-to-support-shortcut-fe.patch" \
+			openwrt/target/linux/generic/hack-6.18/ || exit 1
+		# turboacc 的 hack-6.18/953 是按 6.18.52 的 skbuff.h 写的；6.18.57+
+		# 在 unreadable:1 后新增了 tc_depth:2，hunk #1 必然失败。
+		# 稳定分支（6.18.52）继续用 turboacc 原补丁；6.18.57+（6.18.60）
+		# 用仓库里的修正版覆盖。对齐 RK-action 的做法（9732f2a9/5d35272f）。
+		local kernel_minor=""
+		if [ -f "openwrt/target/linux/generic/kernel-6.18" ]; then
+			kernel_minor="$(sed -n 's/^LINUX_VERSION-6\.18 = \.\([0-9][0-9]*\).*/\1/p' \
+				openwrt/target/linux/generic/kernel-6.18 | head -n 1)"
+		fi
+		if [ -n "$kernel_minor" ] && [ "$kernel_minor" -ge 57 ]; then
+			local sfe953_fix="$OpenWrt_PATCH_FILE_DIR/sfe-953-net-patch-linux-kernel-to-support-shortcut-fe-6.18.60.patch"
+			if [ ! -s "$sfe953_fix" ]; then
+				echo "::error ::Missing SFE 953 fix: $sfe953_fix"
+				exit 1
+			fi
+			cp -f "$sfe953_fix" \
 				openwrt/target/linux/generic/hack-6.18/953-net-patch-linux-kernel-to-support-shortcut-fe.patch || exit 1
-		else
-			cp -f "$temp_dir/package/hack-6.18/953-net-patch-linux-kernel-to-support-shortcut-fe.patch" \
-				openwrt/target/linux/generic/hack-6.18/ || exit 1
+			echo "----sfe: 953 skbuff.h rebased for 6.18.$kernel_minor----"
 		fi
 	) || return 1
 
