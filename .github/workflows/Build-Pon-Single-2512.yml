@@ -277,6 +277,24 @@ jobs:
         cd openwrt
         make download -j$(nproc)
         find dl -size -1024c -exec rm -f {} \;
+        # package download 失败时 target/linux download 可能没跑完；单独重试 kernel 包。
+        # 对齐 RK-action c73cf38e：curl 在传输中途断开时 tar.xz 不完整，xz -t 才能发现。
+        for attempt in 1 2 3; do
+          make target/linux/download -j1 V=s >/tmp/kernel-download.log 2>&1 || true
+          bad=0
+          for f in dl/linux-*.tar.xz; do
+            [ -e "$f" ] || continue
+            xz -t "$f" >/dev/null 2>&1 || { bad=1; rm -f "$f"; }
+          done
+          for f in dl/linux-*.tar.gz; do
+            [ -e "$f" ] || continue
+            gzip -t "$f" >/dev/null 2>&1 || { bad=1; rm -f "$f"; }
+          done
+          [ "$bad" = 0 ] && break
+          echo "kernel download incomplete (attempt $attempt), retrying..."
+          tail -20 /tmp/kernel-download.log || true
+          sleep 5
+        done
 
     - name: 缓存staging
       id: cache
@@ -334,8 +352,18 @@ jobs:
         BUILD_TIME_LOG: 'build-time.tsv'
       run: |
         echo -e "$(($(nproc)+1)) thread compile"
-        make -j$(($(nproc)+1)) || make -j1 V=s
-        echo "status=success" >> $GITHUB_OUTPUT
+        set -o pipefail
+        make -j$(($(nproc)+1)) 2>&1 | tee compile.log
+        rc=$?
+        if [ "$rc" -ne 0 ] && grep -qE "target/linux/(compile|failed)" compile.log; then
+          echo "::warning ::target/linux 失败，重跑 make -j1 V=s target/linux/compile 以获取详细错误"
+          timeout 600 make -j1 V=s target/linux/compile 2>&1 | tail -120 || true
+        fi
+        if [ "$rc" -ne 0 ]; then
+          make -j1 V=s 2>&1 | tee -a compile.log || rc=$?
+        fi
+        [ "$rc" -eq 0 ] && echo "status=success" >> $GITHUB_OUTPUT
+        exit $rc
 
     - name: 生成编译耗时报告
       # 失败也生成，便于判断是哪个包/阶段拖慢或卡住
