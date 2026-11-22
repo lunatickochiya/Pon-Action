@@ -352,18 +352,37 @@ jobs:
         BUILD_TIME_LOG: 'build-time.tsv'
       run: |
         echo -e "$(($(nproc)+1)) thread compile"
+        # GitHub 用 bash -e 跑脚本；make 失败会在这里直接退出，
+        # 后面的 rc/诊断/日志保存全部不会执行。先关掉 -e（对齐 RK-action）。
+        set +e
         set -o pipefail
         make -j$(($(nproc)+1)) 2>&1 | tee compile.log
         rc=$?
-        if [ "$rc" -ne 0 ] && grep -qE "target/linux/(compile|failed)" compile.log; then
+        if [ "$rc" -ne 0 ] && grep -qE "target/linux([/ ]| failed)" compile.log; then
           echo "::warning ::target/linux 失败，重跑 make -j1 V=s target/linux/compile 以获取详细错误"
-          timeout 600 make -j1 V=s target/linux/compile 2>&1 | tail -120 || true
+          timeout 600 make -j1 V=s target/linux/compile 2>&1 | tail -200 | tee -a compile.log || true
         fi
         if [ "$rc" -ne 0 ]; then
-          make -j1 V=s 2>&1 | tee -a compile.log || rc=$?
+          # 失败时把真实报错直接打到 CI 日志，并留一份到工作区供 artifact 上传
+          echo "::group::compile.log 末尾 200 行"
+          tail -200 compile.log || true
+          echo "::endgroup::"
+          cp -f compile.log "$GITHUB_WORKSPACE/compile.log" || true
         fi
+        set -e
         [ "$rc" -eq 0 ] && echo "status=success" >> $GITHUB_OUTPUT
         exit $rc
+
+    - name: 上传编译日志
+      # 只在失败时上传；compile.log 是 make 的完整输出，失败时通常只有几十 KB
+      if: failure()
+      continue-on-error: true
+      uses: actions/upload-artifact@main
+      with:
+        name: compile-log-${{ matrix.target }}
+        path: compile.log
+        if-no-files-found: ignore
+        retention-days: 7
 
     - name: 生成编译耗时报告
       # 失败也生成，便于判断是哪个包/阶段拖慢或卡住
