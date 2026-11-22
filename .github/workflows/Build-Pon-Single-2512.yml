@@ -367,6 +367,23 @@ jobs:
           timeout 600 make -j1 V=s package/kernel/linux/compile 2>&1 | tail -200 | tee -a compile.log || true
         fi
         if [ "$rc" -ne 0 ]; then
+          # 通用包失败诊断：从 "ERROR: <pkg> failed to build" 提取失败包，
+          # 单线程 V=s 重跑一次把真实报错打进 compile.log（feeds 路径换算成 package/feeds/<feed>/<pkg>）
+          failpkg=$(grep -oE "ERROR: (package|feeds)/[a-zA-Z0-9/._+-]+ failed to build" compile.log | head -n1 | sed -e 's/^ERROR: //' -e 's/ failed to build$//')
+          if [ -n "$failpkg" ]; then
+            failtgt="$failpkg"
+            case "$failpkg" in
+              feeds/*/*/*)
+                feed="$(echo "$failpkg" | cut -d/ -f2)"
+                pkg="$(echo "$failpkg" | cut -d/ -f4)"
+                failtgt="package/feeds/$feed/$pkg"
+                ;;
+            esac
+            echo "::warning ::$failpkg 失败，重跑 make -j1 V=s $failtgt/compile 以获取详细错误"
+            timeout 900 make -j1 V=s "$failtgt/compile" 2>&1 | tail -400 | tee -a compile.log || true
+          fi
+        fi
+        if [ "$rc" -ne 0 ]; then
           # 失败时把真实报错直接打到 CI 日志，并留一份到工作区供 artifact 上传
           echo "::group::compile.log 末尾 200 行"
           tail -200 compile.log || true
