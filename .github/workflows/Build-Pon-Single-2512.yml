@@ -358,9 +358,13 @@ jobs:
         set -o pipefail
         make -j$(($(nproc)+1)) 2>&1 | tee compile.log
         rc=$?
-        if [ "$rc" -ne 0 ] && grep -qE "target/linux([/ ]| failed)" compile.log; then
+        if [ "$rc" -ne 0 ] && grep -q "ERROR: target/linux failed" compile.log; then
           echo "::warning ::target/linux 失败，重跑 make -j1 V=s target/linux/compile 以获取详细错误"
           timeout 600 make -j1 V=s target/linux/compile 2>&1 | tail -200 | tee -a compile.log || true
+        fi
+        if [ "$rc" -ne 0 ] && grep -q "ERROR: package/kernel/linux failed" compile.log; then
+          echo "::warning ::package/kernel/linux 失败，重跑 make -j1 V=s package/kernel/linux/compile 以获取详细错误"
+          timeout 600 make -j1 V=s package/kernel/linux/compile 2>&1 | tail -200 | tee -a compile.log || true
         fi
         if [ "$rc" -ne 0 ]; then
           # 失败时把真实报错直接打到 CI 日志，并留一份到工作区供 artifact 上传
