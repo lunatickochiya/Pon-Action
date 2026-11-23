@@ -75,8 +75,16 @@ PKG_EXTMOD_SUBDIRS:=drivers/aic8800
 # the latter relies on __getname()/__putname(), which are not exported to
 # modules on current kernels.  request_firmware() also matches how OpenWrt
 # ships firmware below /lib/firmware.
+#
+# GCC 14 enables -Wimplicit-fallthrough by default and OpenWrt builds with
+# CONFIG_WERROR, so the vendor driver's intentional switch fallthroughs
+# (marked with "// no break" or not marked at all) fail the build.  The
+# markers are not recognized by GCC, and there are more of them than the
+# ones fixed by patches/001, so silence just this warning class for the
+# driver instead of chasing every site.
 define Build/Compile
 	+$(KERNEL_MAKE) $(PKG_JOBS) \
+		KCFLAGS+=" -Wno-implicit-fallthrough" \
 		M="$(PKG_BUILD_DIR)/drivers/aic8800" \
 		NOSTDINC_FLAGS="$(NOSTDINC_FLAGS)" \
 		CFG80211_VERSION="$(CFG80211_VERSION)" \
