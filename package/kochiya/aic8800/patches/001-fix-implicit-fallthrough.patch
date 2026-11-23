@@ -1,0 +1,40 @@
+--- a/drivers/aic8800/aic8800_fdrv/rwnx_main.c
++++ b/drivers/aic8800/aic8800_fdrv/rwnx_main.c
+@@ -1969,7 +1969,7 @@ static struct rwnx_vif *rwnx_interface_add(struct rwnx_hw *rwnx_hw,
+         vif->ap.generation = 0;
+         vif->ap.mesh_pm = NL80211_MESH_POWER_ACTIVE;
+         vif->ap.next_mesh_pm = NL80211_MESH_POWER_ACTIVE;
+-        // no break
++        fallthrough;
+     case NL80211_IFTYPE_AP:
+         INIT_LIST_HEAD(&vif->ap.sta_list);
+         memset(&vif->ap.bcn, 0, sizeof(vif->ap.bcn));
+@@ -2698,7 +2698,7 @@ static int rwnx_cfg80211_change_iface(struct wiphy *wiphy,
+         INIT_LIST_HEAD(&vif->ap.proxy_list);
+         vif->ap.create_path = false;
+         vif->ap.generation = 0;
+-        // no break
++        fallthrough;
+     case NL80211_IFTYPE_AP:
+     case NL80211_IFTYPE_P2P_GO:
+         INIT_LIST_HEAD(&vif->ap.sta_list);
+--- a/drivers/aic8800/aic8800_fdrv/rwnx_msg_tx.c
++++ b/drivers/aic8800/aic8800_fdrv/rwnx_msg_tx.c
+@@ -618,7 +618,7 @@ int rwnx_send_add_if(struct rwnx_hw *rwnx_hw, const unsigned char *mac,
+     //case NL80211_IFTYPE_P2P_DEVICE:
+     case NL80211_IFTYPE_P2P_CLIENT:
+         add_if_req_param->p2p = true;
+-        // no break
++        fallthrough;
+     #endif /* CONFIG_RWNX_FULLMAC */
+     case NL80211_IFTYPE_STATION:
+         add_if_req_param->type = MM_STA;
+@@ -631,7 +631,7 @@ int rwnx_send_add_if(struct rwnx_hw *rwnx_hw, const unsigned char *mac,
+     #ifdef CONFIG_RWNX_FULLMAC
+     case NL80211_IFTYPE_P2P_GO:
+         add_if_req_param->p2p = true;
+-        // no break
++        fallthrough;
+     #endif /* CONFIG_RWNX_FULLMAC */
+     case NL80211_IFTYPE_AP:
+         add_if_req_param->type = MM_AP;
